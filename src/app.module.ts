@@ -2,6 +2,11 @@ import { Module } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { LobbyModule } from './lobby/lobby.module';
+import { FrontModule } from './front/front.module';
+import { RankingModule } from './ranking/ranking.module';
+import { SocialModule } from './social/social.module';
+import { ClubModule } from './club/club.module';
+import { TournamentModule } from './tournament/tournament.module';
 import { GametableEntity } from './lobby/entities/gametable.entity';
 import { GametablePlayerEntity } from './lobby/entities/gametable-player.entity';
 import { TournamentEntity } from './lobby/entities/tournament.entity';
@@ -25,10 +30,15 @@ import { TournamentSubscriptionEntity } from './lobby/entities/tournament-subscr
           TournamentEntity,
           TournamentSubscriptionEntity,
         ],
-        synchronize: false, // schéma géré par les scripts SQL existants
+        synchronize: false,
       }),
     }),
     LobbyModule,
+    FrontModule,
+    RankingModule,
+    SocialModule,
+    ClubModule,
+    TournamentModule,
   ],
 })
 export class AppModule {}
