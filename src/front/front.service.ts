@@ -23,7 +23,7 @@ export class FrontService {
   // Source: Front.java → getFrontConnectionAdresses()
   getFrontConnectionAddresses(): Promise<FrontAddressDto[]> {
     return this.dataSource.query<FrontAddressDto[]>(`
-      SELECT f.ip, f.port
+      SELECT f.ip, f.fqdn
       FROM front f
       WHERE f.endts = 0
         AND (SELECT COUNT(*) FROM connection c WHERE c.frontid = f.frontid AND c.endts = 0)
