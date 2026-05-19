@@ -141,7 +141,7 @@ export class SocialService {
         t.playerscount                AS playersCount,
         UNIX_TIMESTAMP(t.starttime)   AS startTime,
         w.amount                      AS amount,
-        gtp.rank                      AS rank
+        gtp.rank                      AS \`rank\`
       FROM genericsubscription gs
       JOIN tournamentsubscription ts  ON ts.tournamentsubscriptionid = gs.tournamentsubscriptionid
       JOIN tournament             t   ON t.tournamentid              = ts.tournamentid

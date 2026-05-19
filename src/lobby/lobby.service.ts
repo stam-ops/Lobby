@@ -277,7 +277,7 @@ export class LobbyService {
       SELECT
         pi.screenname AS screenName,
         tp.stack      AS stack,
-        tp.rank       AS rank,
+        tp.rank       AS \`rank\`,
         tp.playerid   AS playerId
       FROM gametableplayer tp
       JOIN playerinfos pi ON tp.playerid = pi.playerid
@@ -297,7 +297,7 @@ export class LobbyService {
       SELECT
         pi.screenname AS screenName,
         tp.stack      AS stack,
-        tp.rank       AS rank,
+        tp.rank       AS \`rank\`,
         tp.playerid   AS playerId
       FROM gametableplayer tp
       JOIN playerinfos pi ON tp.playerid    = pi.playerid
@@ -316,7 +316,7 @@ export class LobbyService {
       SELECT
         pi.screenname   AS screenName,
         ta.initstack    AS stack,
-        0               AS rank,
+        0               AS \`rank\`,
         ts.playerid     AS playerId
       FROM tournamentsubscription ts
       JOIN tournament         t  ON t.tournamentid          = ts.tournamentid

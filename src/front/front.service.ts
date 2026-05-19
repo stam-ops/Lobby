@@ -9,6 +9,7 @@ export class FrontService {
   constructor(private readonly dataSource: DataSource) {}
 
   // Source: Front.java → getAvailableFrontsCount()
+  // front.maxconnection = limite par serveur front (colonne directe sur la table)
   async isFrontAvailable(): Promise<{ available: boolean }> {
     const rows = await this.dataSource.query<{ mycount: number }[]>(`
       SELECT COUNT(*) as mycount
@@ -21,9 +22,10 @@ export class FrontService {
   }
 
   // Source: Front.java → getFrontConnectionAdresses()
+  // ip est stocké en INT → INET_NTOA pour obtenir la chaîne lisible
   getFrontConnectionAddresses(): Promise<FrontAddressDto[]> {
     return this.dataSource.query<FrontAddressDto[]>(`
-      SELECT f.ip, f.fqdn
+      SELECT INET_NTOA(f.ip) AS ip, f.fqdn
       FROM front f
       WHERE f.endts = 0
         AND (SELECT COUNT(*) FROM connection c WHERE c.frontid = f.frontid AND c.endts = 0)
@@ -34,7 +36,7 @@ export class FrontService {
   // Source: Front.java → getLobbyConnection()
   getLobby(): Promise<LobbyConnectionDto[]> {
     return this.dataSource.query<LobbyConnectionDto[]>(`
-      SELECT ip, weight FROM lobby WHERE endts = 0
+      SELECT INET_NTOA(ip) AS ip, weight FROM lobby WHERE endts = 0
     `);
   }
 

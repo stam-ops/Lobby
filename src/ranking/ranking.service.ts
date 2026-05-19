@@ -43,7 +43,7 @@ export class RankingService {
         pi.screenname   AS screenName,
         pi.fbuid        AS fbUid,
         wp.amount       AS amount,
-        gtp.rank        AS rank,
+        gtp.rank        AS \`rank\`,
         pa.gamescore    AS gameScore,
         pp.label        AS lot
       FROM gametableplayer gtp
@@ -203,7 +203,7 @@ export class RankingService {
         pa.gamescore, pa.socialscore, pi.screenname, pi.fbuid,
         p.accounttype, UNIX_TIMESTAMP(p.endvipts) AS endVipTs, p.subscription,
         ((SELECT COUNT(*) FROM playeraccount pa2
-          WHERE pa2.gamescore + pa2.socialscore > pa.gamescore + pa.socialscore) + 1) AS rank
+          WHERE pa2.gamescore + pa2.socialscore > pa.gamescore + pa.socialscore) + 1) AS \`rank\`
       FROM playeraccount pa
       JOIN playerinfos pi ON pi.playerid = pa.playerid
       JOIN player      p  ON p.playerid  = pa.playerid
