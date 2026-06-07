@@ -16,15 +16,6 @@ export class SubscribableArchetypeDto {
   @ApiProperty()
   buyIn: number;
 
-  @ApiProperty({ description: '0 for SNG archetypes' })
-  smallBlind: number;
-
-  @ApiProperty({ description: '0 for SNG archetypes' })
-  bigBlind: number;
-
-  @ApiProperty({ description: '0 for SNG archetypes' })
-  ante: number;
-
   @ApiProperty()
   hasVideo: number;
 
