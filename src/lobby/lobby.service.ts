@@ -131,12 +131,12 @@ export class LobbyService {
         JOIN gametablearchetype gta ON gta.gametablearchetypeid = gt.gametablearchetypeid
         WHERE gt.tabletype = 1
           AND (
-            (gt.launchstate = 0 AND gt.gamestate = 0)
-            OR (gt.launchstate = 2 AND gt.gamestate = 1)
+            (gt.launchstate = 0 AND gt.gamestate = 1)
+            OR  (gt.launchstate = 2 AND gt.gamestate = 2)
           )
         ORDER BY gt.gamestate ASC
       `),
-      // SNG tournaments (starttype = 0 = maxPlayersReached = fill-up/SNG start)
+      // SNG tournaments (starttype = 0 = maxPlayersReached, gamestate=1=subscription = en attente de joueurs)
       this.dataSource.query<SngTableDto[]>(`
         SELECT
           t.tournamentid      AS tableOrTournId,
