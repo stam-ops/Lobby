@@ -7,6 +7,7 @@ import { CgTableDto } from './dto/cg-table.dto';
 import { SngTableDto } from './dto/sng-table.dto';
 import { TournamentDto } from './dto/tournament.dto';
 import { PlayerStackDto } from './dto/player-stack.dto';
+import { SubscribableArchetypeDto } from './dto/subscribable-archetype.dto';
 
 @Injectable()
 export class LobbyService {
@@ -326,5 +327,76 @@ export class LobbyService {
         AND t.gamestate  = 0
         AND ts.subscription = 0
     `, [tourId]);
+  }
+
+  // ── Subscribable Archetypes ───────────────────────────────────────────────
+  // Source: GameTableArchetype.java → getSubscribableArchetypes()
+  // Archetypes non-classic (type != 0) auxquels le joueur peut s'inscrire :
+  //   result1 : SNG non-classic (tabletype=1, type != 0) → ex. CamDate (mixedGendersSNG)
+  //   result2 : CashGame non-classic (tabletype=0, type != 0) → ex. publicCG
+  // clientId=0 → clientid IS NULL (archetypes publics)
+
+  async getSubscribableArchetypes(clientId = 0): Promise<SubscribableArchetypeDto[]> {
+    const sngQuery = clientId > 0
+      ? `SELECT gta.gametablearchetypeid AS archetypeId,
+                gta.type                AS archetypeType,
+                gta.tabletype           AS tableType,
+                gta.maxplayers          AS tableSize,
+                gta.buyin               AS buyIn,
+                0                       AS smallBlind,
+                0                       AS bigBlind,
+                0                       AS ante,
+                gta.hasvideo            AS hasVideo,
+                gta.label               AS label
+           FROM gametablearchetype gta
+           WHERE gta.isvalid = 1
+             AND gta.clientid = ?
+             AND gta.type != 0
+             AND gta.tabletype = 1
+           ORDER BY gta.maxplayers ASC, gta.buyin ASC`
+      : `SELECT gta.gametablearchetypeid AS archetypeId,
+                gta.type                AS archetypeType,
+                gta.tabletype           AS tableType,
+                gta.maxplayers          AS tableSize,
+                gta.buyin               AS buyIn,
+                0                       AS smallBlind,
+                0                       AS bigBlind,
+                0                       AS ante,
+                gta.hasvideo            AS hasVideo,
+                gta.label               AS label
+           FROM gametablearchetype gta
+           WHERE gta.isvalid = 1
+             AND gta.clientid IS NULL
+             AND gta.type != 0
+             AND gta.tabletype = 1
+           ORDER BY gta.maxplayers ASC, gta.buyin ASC`;
+
+    const cgQuery = `
+      SELECT gta.gametablearchetypeid AS archetypeId,
+             gta.type                AS archetypeType,
+             gta.tabletype           AS tableType,
+             gta.maxplayers          AS tableSize,
+             gta.buyin               AS buyIn,
+             bv.smallblind           AS smallBlind,
+             bv.bigblind             AS bigBlind,
+             bv.ante                 AS ante,
+             gta.hasvideo            AS hasVideo,
+             gta.label               AS label
+      FROM gametablearchetype gta
+      JOIN blindlevel bl ON bl.blindstructureid = gta.blindstructureid
+      JOIN blindvalues bv ON bv.blindvaluesid   = bl.blindvaluesid
+      WHERE gta.isvalid = 1
+        AND gta.type != 0
+        AND gta.tabletype = 0
+      ORDER BY gta.maxplayers ASC, bv.bigblind ASC`;
+
+    const [sngArchetypes, cgArchetypes] = await Promise.all([
+      clientId > 0
+        ? this.dataSource.query<SubscribableArchetypeDto[]>(sngQuery, [clientId])
+        : this.dataSource.query<SubscribableArchetypeDto[]>(sngQuery),
+      this.dataSource.query<SubscribableArchetypeDto[]>(cgQuery),
+    ]);
+
+    return [...sngArchetypes, ...cgArchetypes];
   }
 }

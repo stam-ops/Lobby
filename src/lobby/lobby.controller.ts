@@ -5,6 +5,7 @@ import { CgTableDto } from './dto/cg-table.dto';
 import { SngTableDto } from './dto/sng-table.dto';
 import { TournamentDto } from './dto/tournament.dto';
 import { PlayerStackDto } from './dto/player-stack.dto';
+import { SubscribableArchetypeDto } from './dto/subscribable-archetype.dto';
 
 @Controller('lobby')
 export class LobbyController {
@@ -46,6 +47,23 @@ export class LobbyController {
   @Get('sng-tables')
   getSNGTables() {
     return this.lobby.getSNGTables();
+  }
+
+  @ApiTags('SNG Tables')
+  @ApiOperation({ summary: 'Archetypes non-classic auxquels s\'inscrire (CamDate/mixedGendersSNG, publicCG...)' })
+  @ApiResponse({ status: 200, type: [SubscribableArchetypeDto] })
+  @Get('subscribable-archetypes')
+  getSubscribableArchetypes() {
+    return this.lobby.getSubscribableArchetypes();
+  }
+
+  @ApiTags('SNG Tables')
+  @ApiOperation({ summary: 'Archetypes non-classic pour un client spécifique (clientid = clientId)' })
+  @ApiParam({ name: 'clientId', type: Number, example: 1 })
+  @ApiResponse({ status: 200, type: [SubscribableArchetypeDto] })
+  @Get('subscribable-archetypes/:clientId')
+  getSubscribableArchetypesByClient(@Param('clientId', ParseIntPipe) clientId: number) {
+    return this.lobby.getSubscribableArchetypes(clientId);
   }
 
   // ── Tournaments ───────────────────────────────────────────────────────────
