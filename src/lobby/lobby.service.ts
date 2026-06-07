@@ -103,7 +103,7 @@ export class LobbyService {
 
   // ── SNG Tables ────────────────────────────────────────────────────────────
   // Source: GameTable.java → getSNGTables()
-  // Deux sources : gametable (tabletype=1) + tournament (starttype=1 = SNG tournament)
+  // Deux sources : gametable (tabletype=1) + tournament (starttype=0 = maxPlayersReached = SNG)
 
   async getSNGTables(): Promise<SngTableDto[]> {
     const [sngTables, sngTournaments] = await Promise.all([
@@ -136,7 +136,7 @@ export class LobbyService {
           )
         ORDER BY gt.gamestate ASC
       `),
-      // SNG tournaments (starttype = 1 = fill-up/SNG start)
+      // SNG tournaments (starttype = 0 = maxPlayersReached = fill-up/SNG start)
       this.dataSource.query<SngTableDto[]>(`
         SELECT
           t.tournamentid      AS tableOrTournId,
@@ -156,7 +156,7 @@ export class LobbyService {
           NULL                AS rakePercentage
         FROM tournament t
         JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
-        WHERE ta.starttype = 1
+        WHERE ta.starttype = 0
           AND t.gamestate        IN (0, 1, 2)
           AND t.subscriptionstate IN (0, 1)
         ORDER BY t.gamestate ASC
@@ -168,7 +168,7 @@ export class LobbyService {
 
   // ── Tournaments ───────────────────────────────────────────────────────────
   // Source: Tournament.java → getTournaments(clientId)
-  // starttype = 0 (scheduled), gamestate IN (0,1,2,3)
+  // starttype = 1 (scheduled), gamestate IN (0,1,2,3)
 
   getTournaments(): Promise<TournamentDto[]> {
     return this.dataSource.query<TournamentDto[]>(`
@@ -194,7 +194,7 @@ export class LobbyService {
         ta.lastlateregisterlevel                AS lastLateRegisterLevel
       FROM tournament t
       JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
-      WHERE ta.starttype = 0
+      WHERE ta.starttype = 1
         AND t.gamestate IN (0, 1, 2, 3)
         AND ta.clubid IS NULL
       ORDER BY t.starttime ASC, ta.periodtype ASC
@@ -230,7 +230,7 @@ export class LobbyService {
       JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
       JOIN clubplayer          cp ON cp.clubid   = ta.clubid
                                  AND cp.playerid = ?
-      WHERE ta.starttype = 0
+      WHERE ta.starttype = 1
         AND t.gamestate IN (0, 1, 2, 3)
       ORDER BY t.starttime ASC, ta.periodtype ASC
     `, [playerId]);
