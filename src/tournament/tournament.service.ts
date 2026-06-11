@@ -252,9 +252,11 @@ export class TournamentService {
   async getPublicSNGTableWaitingSubscriptions(tableArchetypeId: number): Promise<{ count: number }> {
     const rows = await this.dataSource.query<{ nb: number }[]>(`
       SELECT COUNT(*) AS nb
-      FROM gametablearchetypesubscription gtas
+      FROM genericsubscription gs
+      JOIN gametablearchetypesubscription gtas ON gs.gametablearchetypesubscriptionid = gtas.gametablearchetypesubscriptionid
       WHERE gtas.gametablearchetypeid = ?
-        AND gtas.endts = 0
+        AND gtas.subscription = 0
+        AND gs.gametableplayerid IS NULL
     `, [tableArchetypeId]);
     return { count: Number(rows[0].nb) };
   }
@@ -262,26 +264,29 @@ export class TournamentService {
   // Source: TableArchetype.java → getMixedSNGPendingTablesCount(sex, tableArchetypeId)
   async getMixedSNGPendingTablesCount(sex: number, tableArchetypeId: number): Promise<{ count: number }> {
     const rows = await this.dataSource.query<any[]>(`
-      SELECT gtas.playerid, p.sex
-      FROM gametablearchetypesubscription gtas
-      JOIN player p ON p.playerid = gtas.playerid
+      SELECT gtas.playerid, pi.sex
+      FROM genericsubscription gs
+      JOIN gametablearchetypesubscription gtas ON gs.gametablearchetypesubscriptionid = gtas.gametablearchetypesubscriptionid
+      JOIN playerinfos pi ON pi.playerid = gtas.playerid
       WHERE gtas.gametablearchetypeid = ?
-        AND gtas.endts = 0
-      ORDER BY gtas.gametablearchetypesubscriptionid ASC
+        AND gtas.subscription = 0
+        AND gs.gametableplayerid IS NULL
+      ORDER BY gtas.subscriptionts ASC
     `, [tableArchetypeId]);
 
     const tableSize = await this.getArchetypeTableSize(tableArchetypeId);
     const half = Math.floor(tableSize / 2);
 
+    // Java convention (playerinfos.sex): 0 = man, 1 = woman
     let men = 0, women = 0;
     for (const r of rows) {
-      if (r.sex === 1) men++;
+      if (r.sex === 0) men++;
       else women++;
     }
 
     const menTables = Math.floor(men / half);
     const womenTables = Math.floor(women / half);
-    const count = sex === 1 ? menTables : womenTables;
+    const count = sex === 0 ? menTables : womenTables;
     return { count };
   }
 
@@ -290,22 +295,24 @@ export class TournamentService {
     tableArchetypeId: number, playerId: number,
   ): Promise<MixedSNGMissingPlayersDto> {
     const rows = await this.dataSource.query<any[]>(`
-      SELECT gtas.playerid, p.sex
-      FROM gametablearchetypesubscription gtas
-      JOIN player p ON p.playerid = gtas.playerid
+      SELECT gtas.playerid, pi.sex
+      FROM genericsubscription gs
+      JOIN gametablearchetypesubscription gtas ON gs.gametablearchetypesubscriptionid = gtas.gametablearchetypesubscriptionid
+      JOIN playerinfos pi ON pi.playerid = gtas.playerid
       WHERE gtas.gametablearchetypeid = ?
-        AND gtas.endts = 0
-      ORDER BY gtas.gametablearchetypesubscriptionid ASC
+        AND gtas.subscription = 0
+        AND gs.gametableplayerid IS NULL
+      ORDER BY gtas.subscriptionts ASC
     `, [tableArchetypeId]);
 
     const tableSize = await this.getArchetypeTableSize(tableArchetypeId);
     const half = Math.floor(tableSize / 2);
 
-    // Compte jusqu'à la position du joueur
+    // Compte jusqu'à la position du joueur (sex: 0 = homme, 1 = femme)
     let men = 0, women = 0;
     for (const r of rows) {
       if (r.playerid === playerId) break;
-      if (r.sex === 1) men++;
+      if (r.sex === 0) men++;
       else women++;
     }
 
@@ -323,12 +330,14 @@ export class TournamentService {
     sex: number, tableArchetypeId: number, playerId: number,
   ): Promise<{ count: number }> {
     const rows = await this.dataSource.query<any[]>(`
-      SELECT gtas.playerid, p.sex
-      FROM gametablearchetypesubscription gtas
-      JOIN player p ON p.playerid = gtas.playerid
+      SELECT gtas.playerid, pi.sex
+      FROM genericsubscription gs
+      JOIN gametablearchetypesubscription gtas ON gs.gametablearchetypesubscriptionid = gtas.gametablearchetypesubscriptionid
+      JOIN playerinfos pi ON pi.playerid = gtas.playerid
       WHERE gtas.gametablearchetypeid = ?
-        AND gtas.endts = 0
-      ORDER BY gtas.gametablearchetypesubscriptionid ASC
+        AND gtas.subscription = 0
+        AND gs.gametableplayerid IS NULL
+      ORDER BY gtas.subscriptionts ASC
     `, [tableArchetypeId]);
 
     const tableSize = await this.getArchetypeTableSize(tableArchetypeId);
@@ -337,11 +346,11 @@ export class TournamentService {
     let men = 0, women = 0;
     for (const r of rows) {
       if (r.playerid === playerId) break;
-      if (r.sex === 1) men++;
+      if (r.sex === 0) men++;
       else women++;
     }
 
-    const count = sex === 1 ? Math.floor(men / half) : Math.floor(women / half);
+    const count = sex === 0 ? Math.floor(men / half) : Math.floor(women / half);
     return { count };
   }
 
