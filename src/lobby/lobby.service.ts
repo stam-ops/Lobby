@@ -48,7 +48,8 @@ export class LobbyService {
   }
 
   // Source: GameTable.java → getRunningPrivateCGTables(ownerId)
-  // gta.type = 1 (private archetype type)
+  // gta.type = 4 (ArchetypeType.privateCG — cf. ClientCodes ; le legacy filtre
+  // `gta.type = ArchetypeType.privateCG`. type=1 = mixedGendersSNG/CamDate, PAS privé)
 
   getPrivateCGTables(playerId: number): Promise<CgTableDto[]> {
     return this.dataSource.query<CgTableDto[]>(`
@@ -66,7 +67,7 @@ export class LobbyService {
         gt.playerscount AS nbPlayers
       FROM gametable gt
       JOIN gametablearchetype gta ON gt.gametablearchetypeid = gta.gametablearchetypeid
-                                  AND gta.type = 1
+                                  AND gta.type = 4
       JOIN blindlevel         bl  ON bl.blindstructureid = gta.blindstructureid
       JOIN blindvalues        bv  ON bv.blindvaluesid    = bl.blindvaluesid
       WHERE gt.ownerplayerid = ?
@@ -92,7 +93,7 @@ export class LobbyService {
         gt.playerscount AS nbPlayers
       FROM gametable gt
       JOIN gametablearchetype gta ON gt.gametablearchetypeid = gta.gametablearchetypeid
-                                  AND gta.type = 1
+                                  AND gta.type = 4
       JOIN blindlevel         bl  ON bl.blindstructureid = gta.blindstructureid
       JOIN blindvalues        bv  ON bv.blindvaluesid    = bl.blindvaluesid
       WHERE gt.ownerplayerid = ?
@@ -331,11 +332,16 @@ export class LobbyService {
 
   // ── Subscribable Archetypes ───────────────────────────────────────────────
   // Source: GameTableArchetype.java → getSubscribableArchetypes()
-  // SNG non-classic (tabletype=1, type != 0) → ex. CamDate (mixedGendersSNG)
-  // clientId=0 → clientid IS NULL (archetypes publics)
+  // Union fidèle au legacy (2 requêtes) :
+  //   result1 : SNG non-classic (tabletype=1, type != classic) → CamDate / CamBlitz.
+  //             clientId>0 → clientid = ? ; clientId=0 → clientid IS NULL.
+  //   result2 : CG non-classic (tabletype=0, type != classic) avec blinds (JOIN
+  //             blindlevel/blindvalues) → publicCG + privateCG. Indépendant du
+  //             clientId (le legacy ne filtre pas par client ici).
+  // Le client filtre ensuite par archetypeType (ex. privateCG pour les tables privées).
 
-  getSubscribableArchetypes(clientId = 0): Promise<SubscribableArchetypeDto[]> {
-    return clientId > 0
+  async getSubscribableArchetypes(clientId = 0): Promise<SubscribableArchetypeDto[]> {
+    const sngArchetypes = clientId > 0
       ? this.dataSource.query<SubscribableArchetypeDto[]>(`
           SELECT gta.gametablearchetypeid AS archetypeId,
                  gta.type                AS archetypeType,
@@ -343,7 +349,10 @@ export class LobbyService {
                  gta.maxplayers          AS tableSize,
                  gta.buyin               AS buyIn,
                  gta.hasvideo            AS hasVideo,
-                 gta.label               AS label
+                 gta.label               AS label,
+                 0                       AS smallBlind,
+                 0                       AS bigBlind,
+                 0                       AS ante
           FROM gametablearchetype gta
           WHERE gta.isvalid = 1
             AND gta.clientid = ?
@@ -358,7 +367,10 @@ export class LobbyService {
                  gta.maxplayers          AS tableSize,
                  gta.buyin               AS buyIn,
                  gta.hasvideo            AS hasVideo,
-                 gta.label               AS label
+                 gta.label               AS label,
+                 0                       AS smallBlind,
+                 0                       AS bigBlind,
+                 0                       AS ante
           FROM gametablearchetype gta
           WHERE gta.isvalid = 1
             AND gta.clientid IS NULL
@@ -366,5 +378,29 @@ export class LobbyService {
             AND gta.tabletype = 1
           ORDER BY gta.maxplayers ASC, gta.buyin ASC
         `);
+
+    // result2 — archétypes CG (publicCG + privateCG) avec leurs blinds.
+    const cgArchetypes = this.dataSource.query<SubscribableArchetypeDto[]>(`
+      SELECT gta.gametablearchetypeid AS archetypeId,
+             gta.type                AS archetypeType,
+             gta.tabletype           AS tableType,
+             gta.maxplayers          AS tableSize,
+             gta.buyin               AS buyIn,
+             gta.hasvideo            AS hasVideo,
+             gta.label               AS label,
+             bv.smallblind           AS smallBlind,
+             bv.bigblind             AS bigBlind,
+             bv.ante                 AS ante
+      FROM gametablearchetype gta
+      JOIN blindlevel  bl ON bl.blindstructureid = gta.blindstructureid
+      JOIN blindvalues bv ON bv.blindvaluesid    = bl.blindvaluesid
+      WHERE gta.isvalid = 1
+        AND gta.type != 0
+        AND gta.tabletype = 0
+      ORDER BY gta.maxplayers ASC, bv.bigblind ASC
+    `);
+
+    const [sng, cg] = await Promise.all([sngArchetypes, cgArchetypes]);
+    return [...sng, ...cg];
   }
 }
