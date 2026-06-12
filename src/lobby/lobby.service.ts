@@ -55,7 +55,7 @@ export class LobbyService {
     return this.dataSource.query<CgTableDto[]>(`
       SELECT
         gt.gametableid  AS tableId,
-        gta.label       AS label,
+        COALESCE(NULLIF(gt.label, ''), gta.label) AS label,
         gta.minplayers  AS minPlayers,
         gta.maxplayers  AS maxPlayers,
         bv.smallblind   AS smallBlind,
@@ -81,7 +81,7 @@ export class LobbyService {
     return this.dataSource.query<CgTableDto[]>(`
       SELECT
         gt.gametableid  AS tableId,
-        gta.label       AS label,
+        COALESCE(NULLIF(gt.label, ''), gta.label) AS label,
         gta.minplayers  AS minPlayers,
         gta.maxplayers  AS maxPlayers,
         bv.smallblind   AS smallBlind,
