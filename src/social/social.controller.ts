@@ -47,6 +47,22 @@ export class SocialController {
     return this.social.getFriends(playerId, max);
   }
 
+  @ApiOperation({ summary: 'Demandes d\'amis reçues, en attente de réponse (friendrelationstate=2, je suis la cible)' })
+  @ApiParam({ name: 'playerId', type: Number, example: 123 })
+  @ApiResponse({ status: 200, type: [FriendDto] })
+  @Get('friend-requests/incoming/:playerId')
+  getIncomingFriendRequests(@Param('playerId', ParseIntPipe) playerId: number) {
+    return this.social.getIncomingFriendRequests(playerId);
+  }
+
+  @ApiOperation({ summary: 'Demandes d\'amis envoyées, en attente de réponse (friendrelationstate=2, je suis l\'émetteur)' })
+  @ApiParam({ name: 'playerId', type: Number, example: 123 })
+  @ApiResponse({ status: 200, type: [FriendDto] })
+  @Get('friend-requests/outgoing/:playerId')
+  getOutgoingFriendRequests(@Param('playerId', ParseIntPipe) playerId: number) {
+    return this.social.getOutgoingFriendRequests(playerId);
+  }
+
   @ApiOperation({ summary: 'Amis sponsorisés (Social.java → getSponsoredFriends)' })
   @ApiParam({ name: 'playerId', type: Number, example: 123 })
   @ApiQuery({ name: 'max', required: false, type: Number, example: 50 })

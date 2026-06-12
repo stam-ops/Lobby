@@ -58,10 +58,10 @@ export class SocialService {
       const placeholders = playerIds.map(() => '?').join(',');
       const friends = await this.dataSource.query<{ playerid: number }[]>(`
         SELECT playeridto AS playerid FROM friendrelation
-        WHERE playeridfrom = ? AND playeridto IN (${placeholders})
+        WHERE playeridfrom = ? AND friendrelationstate = 0 AND playeridto IN (${placeholders})
         UNION
         SELECT playeridfrom AS playerid FROM friendrelation
-        WHERE playeridto = ? AND playeridfrom IN (${placeholders})
+        WHERE playeridto = ? AND friendrelationstate = 0 AND playeridfrom IN (${placeholders})
       `, [playerIdFrom, ...playerIds, playerIdFrom, ...playerIds]);
 
       friends.forEach(f => friendIds.add(f.playerid));
@@ -80,7 +80,9 @@ export class SocialService {
     }));
   }
 
-  // Source: Social.java → getFriends(playerId, max) — bidirectionnel via friendrelation
+  // Source: Social.java → getFriends(playerId, max) — bidirectionnel via friendrelation.
+  // friendrelationstate = 0 (friend) UNIQUEMENT : on exclut les demandes en attente
+  // (state=2 pending) et les relations bloquées (state=4).
   async getFriends(playerId: number, max: number): Promise<FriendDto[]> {
     const rows = await this.dataSource.query<any[]>(`
       (SELECT pi.playerid, pi.screenname, pi.fbuid, pi.firstname, pi.lastname,
@@ -88,27 +90,57 @@ export class SocialService {
        FROM friendrelation fr
        JOIN playerinfos  pi ON pi.playerid = fr.playeridto
        JOIN playeraccount pa ON pa.playerid = pi.playerid
-       WHERE fr.playeridfrom = ?)
+       WHERE fr.playeridfrom = ? AND fr.friendrelationstate = 0)
       UNION
       (SELECT pi.playerid, pi.screenname, pi.fbuid, pi.firstname, pi.lastname,
               pa.gamescore, pa.socialscore
        FROM friendrelation fr
        JOIN playerinfos  pi ON pi.playerid = fr.playeridfrom
        JOIN playeraccount pa ON pa.playerid = pi.playerid
-       WHERE fr.playeridto = ?)
+       WHERE fr.playeridto = ? AND fr.friendrelationstate = 0)
       LIMIT ?
     `, [playerId, playerId, max]);
 
-    return rows.map(r => ({
-      playerId: r.playerid,
-      screenName: r.screenname,
-      fbUid: r.fbuid,
-      firstName: r.firstname,
-      lastName: r.lastname,
-      gameScore: r.gamescore,
-      socialScore: r.socialscore,
-    }));
+    return rows.map(this.mapFriendRow);
   }
+
+  // Demandes d'amis REÇUES (à accepter/refuser) : je suis la cible (playeridto),
+  // état pending (2). On renvoie les infos du demandeur (playeridfrom).
+  async getIncomingFriendRequests(playerId: number): Promise<FriendDto[]> {
+    const rows = await this.dataSource.query<any[]>(`
+      SELECT pi.playerid, pi.screenname, pi.fbuid, pi.firstname, pi.lastname,
+             pa.gamescore, pa.socialscore
+      FROM friendrelation fr
+      JOIN playerinfos  pi ON pi.playerid = fr.playeridfrom
+      JOIN playeraccount pa ON pa.playerid = pi.playerid
+      WHERE fr.playeridto = ? AND fr.friendrelationstate = 2
+    `, [playerId]);
+    return rows.map(this.mapFriendRow);
+  }
+
+  // Demandes d'amis ENVOYÉES (en attente de réponse) : je suis l'émetteur
+  // (playeridfrom), état pending (2). On renvoie les infos de la cible (playeridto).
+  async getOutgoingFriendRequests(playerId: number): Promise<FriendDto[]> {
+    const rows = await this.dataSource.query<any[]>(`
+      SELECT pi.playerid, pi.screenname, pi.fbuid, pi.firstname, pi.lastname,
+             pa.gamescore, pa.socialscore
+      FROM friendrelation fr
+      JOIN playerinfos  pi ON pi.playerid = fr.playeridto
+      JOIN playeraccount pa ON pa.playerid = pi.playerid
+      WHERE fr.playeridfrom = ? AND fr.friendrelationstate = 2
+    `, [playerId]);
+    return rows.map(this.mapFriendRow);
+  }
+
+  private mapFriendRow = (r: any): FriendDto => ({
+    playerId: r.playerid,
+    screenName: r.screenname,
+    fbUid: r.fbuid,
+    firstName: r.firstname,
+    lastName: r.lastname,
+    gameScore: r.gamescore,
+    socialScore: r.socialscore,
+  });
 
   // Source: Social.java → getSponsoredFriends(playerId, max) — via sponsor table
   async getSponsoredFriends(playerId: number, max: number): Promise<FriendDto[]> {
