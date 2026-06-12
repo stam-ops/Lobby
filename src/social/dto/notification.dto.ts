@@ -12,4 +12,10 @@ export class NotificationDto {
 
   @ApiProperty({ example: 0, description: '0=non consommé, 1=consommé' })
   isConsumed: number;
+
+  @ApiProperty({ required: false, description: "Autre joueur de la relation (demandes d'ami) — null sinon" })
+  fromPlayerId?: number;
+
+  @ApiProperty({ required: false, description: "Pseudo de l'autre joueur (demandes d'ami)" })
+  fromScreenName?: string;
 }

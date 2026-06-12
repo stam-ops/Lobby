@@ -11,21 +11,30 @@ export class SocialService {
   constructor(private readonly dataSource: DataSource) {}
 
   // Source: Social.java → getPlayerNotifications(playerId, nbMaxNotifs)
+  // Enrichi (cf. NotifationRow.InvitationNotifInfos legacy) : pour les demandes d'ami, on
+  // joint friendrelation → playerinfos pour renvoyer l'AUTRE joueur (fromPlayerId/fromScreenName) :
+  //   askFriendReceived → le demandeur ; askFriendAnswerReceived → celui qui a accepté.
   async getPlayerNotifications(playerId: number, nbMaxNotifs: number): Promise<NotificationDto[]> {
+    const SELECT = `
+      SELECT n.notificationid AS notificationId, n.notificationtype AS notificationType,
+             n.isread AS isRead, n.isconsumed AS isConsumed,
+             pifrom.playerid   AS fromPlayerId,
+             pifrom.screenname AS fromScreenName
+      FROM notification n
+      LEFT JOIN friendrelation fr ON fr.friendrelationid = n.friendrelationid
+      LEFT JOIN playerinfos    pifrom ON pifrom.playerid =
+                (CASE WHEN fr.playeridfrom = n.playerid THEN fr.playeridto ELSE fr.playeridfrom END)
+    `;
     const [mandatory, optional] = await Promise.all([
       this.dataSource.query<NotificationDto[]>(`
-        SELECT n.notificationid AS notificationId, n.notificationtype AS notificationType,
-               n.isread AS isRead, n.isconsumed AS isConsumed
-        FROM notification n
+        ${SELECT}
         WHERE n.playerid = ?
           AND n.notificationtype IN (${MANDATORY_NOTIF_TYPES.join(',')})
           AND n.isconsumed = 0
-        ORDER BY n.creationts
+        ORDER BY n.creationts DESC
       `, [playerId]),
       this.dataSource.query<NotificationDto[]>(`
-        SELECT n.notificationid AS notificationId, n.notificationtype AS notificationType,
-               n.isread AS isRead, n.isconsumed AS isConsumed
-        FROM notification n
+        ${SELECT}
         WHERE n.playerid = ?
           AND n.notificationtype NOT IN (0,${MANDATORY_NOTIF_TYPES.join(',')})
         ORDER BY n.creationts DESC
