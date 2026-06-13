@@ -18,12 +18,20 @@ export class SocialService {
     const SELECT = `
       SELECT n.notificationid AS notificationId, n.notificationtype AS notificationType,
              n.isread AS isRead, n.isconsumed AS isConsumed,
-             pifrom.playerid   AS fromPlayerId,
-             pifrom.screenname AS fromScreenName
+             COALESCE(
+               CASE WHEN fr.playeridfrom = n.playerid THEN fr.playeridto ELSE fr.playeridfrom END,
+               cp.playeridfrom
+             ) AS fromPlayerId,
+             COALESCE(pifr.screenname, pcp.screenname) AS fromScreenName,
+             cp.message        AS campokeMessage,
+             cp.invitationtype AS inviteType,
+             cp.gametableid    AS gameTableId
       FROM notification n
-      LEFT JOIN friendrelation fr ON fr.friendrelationid = n.friendrelationid
-      LEFT JOIN playerinfos    pifrom ON pifrom.playerid =
+      LEFT JOIN friendrelation fr   ON fr.friendrelationid = n.friendrelationid
+      LEFT JOIN campoke        cp   ON cp.campokeid        = n.campokeid
+      LEFT JOIN playerinfos    pifr ON pifr.playerid =
                 (CASE WHEN fr.playeridfrom = n.playerid THEN fr.playeridto ELSE fr.playeridfrom END)
+      LEFT JOIN playerinfos    pcp  ON pcp.playerid = cp.playeridfrom
     `;
     const [mandatory, optional] = await Promise.all([
       this.dataSource.query<NotificationDto[]>(`

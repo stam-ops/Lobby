@@ -16,6 +16,15 @@ export class NotificationDto {
   @ApiProperty({ required: false, description: "Autre joueur de la relation (demandes d'ami) — null sinon" })
   fromPlayerId?: number;
 
-  @ApiProperty({ required: false, description: "Pseudo de l'autre joueur (demandes d'ami)" })
+  @ApiProperty({ required: false, description: "Pseudo de l'autre joueur (demandes d'ami / campoke)" })
   fromScreenName?: string;
+
+  @ApiProperty({ required: false, description: 'Texte du campoke (notif campokeReceived)' })
+  campokeMessage?: string;
+
+  @ApiProperty({ required: false, description: 'Type d\'invitation campoke (CampokeInvitationType)' })
+  inviteType?: number;
+
+  @ApiProperty({ required: false, description: 'Table à rejoindre (campoke invitePrivateCash/inviteCash)' })
+  gameTableId?: number;
 }
