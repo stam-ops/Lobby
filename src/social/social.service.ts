@@ -29,11 +29,10 @@ export class SocialService {
              cp.message        AS campokeMessage,
              cp.invitationtype AS inviteType,
              cp.gametableid    AS gameTableId,
-             b.bonustype       AS bonusType
+             n.bonusid         AS bonusType
       FROM notification n
       LEFT JOIN friendrelation fr   ON fr.friendrelationid = n.friendrelationid
       LEFT JOIN campoke        cp   ON cp.campokeid        = n.campokeid
-      LEFT JOIN bonus          b    ON b.bonusid           = n.bonusid
       LEFT JOIN playerinfos    pifr ON pifr.playerid =
                 (CASE WHEN fr.playeridfrom = n.playerid THEN fr.playeridto ELSE fr.playeridfrom END)
       LEFT JOIN playerinfos    pcp  ON pcp.playerid = cp.playeridfrom
