@@ -27,4 +27,7 @@ export class NotificationDto {
 
   @ApiProperty({ required: false, description: 'Table à rejoindre (campoke invitePrivateCash/inviteCash)' })
   gameTableId?: number;
+
+  @ApiProperty({ required: false, description: 'Type de bonus réclamable (bonus.bonustype, cf. BonusType) — null si pas un bonus' })
+  bonusType?: number;
 }

@@ -3,8 +3,11 @@ import { DataSource } from 'typeorm';
 import { NotificationDto } from './dto/notification.dto';
 import { PlayerInfoDto, FriendDto, TournamentResultDto, PlayerStatsDto } from './dto/player-info.dto';
 
-// Types mandatory pour les notifications (toujours remontées si non consommées)
-const MANDATORY_NOTIF_TYPES = [1, 11, 12, 19, 20, 21];
+// Types mandatory pour les notifications (toujours remontées si non consommées).
+// Inclut les bonus dédiés RÉCLAMABLES (NotificationType) : welcomeBonus(5), dailyBonus(6),
+// monthlyBonus(7), specialBonus(8), shareBonus(9), camBonus(18), newFilleul(11), newSponsor(12)
+// → filtrés par isconsumed=0 donc disparaissent une fois réclamés (giveBonus les consomme).
+const MANDATORY_NOTIF_TYPES = [1, 5, 6, 7, 8, 9, 11, 12, 18, 19, 20, 21];
 
 @Injectable()
 export class SocialService {
@@ -25,10 +28,12 @@ export class SocialService {
              COALESCE(pifr.screenname, pcp.screenname) AS fromScreenName,
              cp.message        AS campokeMessage,
              cp.invitationtype AS inviteType,
-             cp.gametableid    AS gameTableId
+             cp.gametableid    AS gameTableId,
+             b.bonustype       AS bonusType
       FROM notification n
       LEFT JOIN friendrelation fr   ON fr.friendrelationid = n.friendrelationid
       LEFT JOIN campoke        cp   ON cp.campokeid        = n.campokeid
+      LEFT JOIN bonus          b    ON b.bonusid           = n.bonusid
       LEFT JOIN playerinfos    pifr ON pifr.playerid =
                 (CASE WHEN fr.playeridfrom = n.playerid THEN fr.playeridto ELSE fr.playeridfrom END)
       LEFT JOIN playerinfos    pcp  ON pcp.playerid = cp.playeridfrom
