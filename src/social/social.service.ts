@@ -175,15 +175,16 @@ export class SocialService {
     socialScore: r.socialscore,
   });
 
-  // Source: Social.java → getSponsoredFriends(playerId, max) — via sponsor table
+  // Source: Social.java → getSponsoredFriends(playerId, max) — via sponsor table.
+  // Colonnes réelles (cf. legacy Bdd) : sponsor.playeridfrom = parrain, playeridto = filleul.
   async getSponsoredFriends(playerId: number, max: number): Promise<FriendDto[]> {
     const rows = await this.dataSource.query<any[]>(`
       SELECT pi.playerid, pi.screenname, pi.fbuid, pi.firstname, pi.lastname,
              pa.gamescore, pa.socialscore
       FROM sponsor s
-      JOIN playerinfos  pi ON pi.playerid = s.playeridsponsorised
+      JOIN playerinfos  pi ON pi.playerid = s.playeridto
       JOIN playeraccount pa ON pa.playerid = pi.playerid
-      WHERE s.playeridsponsor = ?
+      WHERE s.playeridfrom = ?
       LIMIT ?
     `, [playerId, max]);
 
@@ -225,7 +226,18 @@ export class SocialService {
   async getPlayerStats(playerId: number): Promise<PlayerStatsDto> {
     const weekStart = `(CURDATE() - INTERVAL WEEKDAY(NOW()) DAY)`;
 
-    const [identity, handsTotal, handsWeek, cashTotal, cashWeek,
+    // Helpers de résilience : ce endpoint agrège des requêtes legacy historiquement
+    // jamais exécutées (aucun appelant avant l'écran profil). Pour ne PAS faire échouer
+    // tout l'endpoint (et donc le screenName + gameScore) si une de ces stats casse, on
+    // dégrade chaque sous-requête vers une valeur par défaut.
+    const nbQ = (sql: string) =>
+      this.dataSource.query<{ nb: number }[]>(sql, [playerId])
+        .then(r => Number(r[0]?.nb ?? 0)).catch(() => 0);
+    const amountQ = (sql: string) =>
+      this.dataSource.query<{ amount: number }[]>(sql, [playerId])
+        .then(r => Number(r[0]?.amount ?? 0)).catch(() => 0);
+
+    const [identityRows, handsTotal, handsWeek, cashTotal, cashWeek,
            sngTotal, sngWeek, tournTotal, tournWeek,
            nbTourn, nbWonTourn, nbSng] = await Promise.all([
       // Identité + score XP du joueur (screenname éditable + gamescore pour le niveau)
@@ -233,84 +245,90 @@ export class SocialService {
         `SELECT pi.screenname, pa.gamescore, pa.socialscore
          FROM playerinfos pi
          JOIN playeraccount pa ON pa.playerid = pi.playerid
-         WHERE pi.playerid = ?`, [playerId]),
+         WHERE pi.playerid = ?`, [playerId])
+        .catch(() => [] as { screenname: string; gamescore: number; socialscore: number }[]),
       // Mains totales
-      this.dataSource.query<{ nb: number }[]>(
-        `SELECT COUNT(*) AS nb FROM gametableplayer WHERE playerid = ?`, [playerId]),
+      nbQ(`SELECT COUNT(*) AS nb FROM gametableplayer WHERE playerid = ?`),
       // Mains cette semaine
-      this.dataSource.query<{ nb: number }[]>(
-        `SELECT COUNT(*) AS nb FROM gametableplayer WHERE playerid = ? AND startts >= ${weekStart}`, [playerId]),
-      // Gains cash total (cashOut - cashIn)
-      this.dataSource.query<{ amount: number }[]>(
-        `SELECT COALESCE(SUM(CASE WHEN type=2 THEN amount ELSE -amount END),0) AS amount
-         FROM gametransaction WHERE playerid = ? AND type IN (0,1,2)`, [playerId]),
+      nbQ(`SELECT COUNT(*) AS nb FROM gametableplayer WHERE playerid = ? AND startts >= ${weekStart}`),
+      // Gains cash total (cashOut - cashIn) — gametransaction est lié au joueur via
+      // genericsubscription → gametableplayer (pas de colonne playerid directe).
+      amountQ(
+        `SELECT COALESCE(SUM(CASE WHEN gtr.type=2 THEN gtr.amount ELSE -gtr.amount END),0) AS amount
+         FROM gametransaction gtr
+         JOIN genericsubscription gs ON gs.genericsubscriptionid = gtr.genericsubscriptionid
+         JOIN gametableplayer gtp ON gtp.gametableplayerid = gs.gametableplayerid
+         WHERE gtp.playerid = ? AND gtr.type IN (0,1,2)`),
       // Gains cash cette semaine
-      this.dataSource.query<{ amount: number }[]>(
-        `SELECT COALESCE(SUM(CASE WHEN type=2 THEN amount ELSE -amount END),0) AS amount
-         FROM gametransaction WHERE playerid = ? AND type IN (0,1,2) AND createts >= ${weekStart}`, [playerId]),
+      amountQ(
+        `SELECT COALESCE(SUM(CASE WHEN gtr.type=2 THEN gtr.amount ELSE -gtr.amount END),0) AS amount
+         FROM gametransaction gtr
+         JOIN genericsubscription gs ON gs.genericsubscriptionid = gtr.genericsubscriptionid
+         JOIN gametableplayer gtp ON gtp.gametableplayerid = gs.gametableplayerid
+         WHERE gtp.playerid = ? AND gtr.type IN (0,1,2) AND gtp.startts >= ${weekStart}`),
       // Gains SNG total
-      this.dataSource.query<{ amount: number }[]>(
+      amountQ(
         `SELECT COALESCE(SUM(wp.amount),0) AS amount
          FROM gametableplayer gtp
          JOIN gametable gt ON gt.gametableid=gtp.gametableid AND gt.gametablearchetypeid IN (2,3,4,5,6,7,17,18)
          JOIN genericsubscription gs ON gs.gametableplayerid=gtp.gametableplayerid
          JOIN wonprize wp ON wp.genericsubscriptionid=gs.genericsubscriptionid
-         WHERE gtp.playerid = ?`, [playerId]),
+         WHERE gtp.playerid = ?`),
       // Gains SNG cette semaine
-      this.dataSource.query<{ amount: number }[]>(
+      amountQ(
         `SELECT COALESCE(SUM(wp.amount),0) AS amount
          FROM gametableplayer gtp
          JOIN gametable gt ON gt.gametableid=gtp.gametableid AND gt.gametablearchetypeid IN (2,3,4,5,6,7,17,18)
          JOIN genericsubscription gs ON gs.gametableplayerid=gtp.gametableplayerid
          JOIN wonprize wp ON wp.genericsubscriptionid=gs.genericsubscriptionid
-         WHERE gtp.playerid = ? AND gtp.startts >= ${weekStart}`, [playerId]),
+         WHERE gtp.playerid = ? AND gtp.startts >= ${weekStart}`),
       // Gains tournoi total
-      this.dataSource.query<{ amount: number }[]>(
+      amountQ(
         `SELECT COALESCE(SUM(wp.amount),0) AS amount
          FROM tournamentsubscription ts
          JOIN genericsubscription gs ON gs.tournamentsubscriptionid=ts.tournamentsubscriptionid
          JOIN wonprize wp ON wp.genericsubscriptionid=gs.genericsubscriptionid
-         WHERE ts.playerid = ?`, [playerId]),
+         WHERE ts.playerid = ?`),
       // Gains tournoi cette semaine
-      this.dataSource.query<{ amount: number }[]>(
+      amountQ(
         `SELECT COALESCE(SUM(wp.amount),0) AS amount
          FROM tournamentsubscription ts
          JOIN genericsubscription gs ON gs.tournamentsubscriptionid=ts.tournamentsubscriptionid
          JOIN wonprize wp ON wp.genericsubscriptionid=gs.genericsubscriptionid
-         WHERE ts.playerid = ? AND ts.subscriptionts >= ${weekStart}`, [playerId]),
+         WHERE ts.playerid = ? AND ts.subscriptionts >= ${weekStart}`),
       // Nb tournois joués
-      this.dataSource.query<{ nb: number }[]>(
-        `SELECT COUNT(*) AS nb FROM tournamentsubscription WHERE playerid = ? AND subscription = 0`, [playerId]),
+      nbQ(`SELECT COUNT(*) AS nb FROM tournamentsubscription WHERE playerid = ? AND subscription = 0`),
       // Nb tournois gagnés (rank=1 sur la dernière table)
-      this.dataSource.query<{ nb: number }[]>(
+      nbQ(
         `SELECT COUNT(*) AS nb
          FROM gametableplayer gtp
          JOIN gametable gt ON gt.gametableid=gtp.gametableid AND gt.gametablearchetypeid IS NULL
-         WHERE gtp.playerid = ? AND gtp.rank = 1`, [playerId]),
+         WHERE gtp.playerid = ? AND gtp.rank = 1`),
       // Nb SNG joués
-      this.dataSource.query<{ nb: number }[]>(
+      nbQ(
         `SELECT COUNT(*) AS nb
          FROM gametableplayer gtp
          JOIN gametable gt ON gt.gametableid=gtp.gametableid AND gt.gametablearchetypeid IN (2,3,4,5,6,7,17,18)
-         WHERE gtp.playerid = ?`, [playerId]),
+         WHERE gtp.playerid = ?`),
     ]);
+    const identity = identityRows[0];
 
     return {
       playerId,
-      screenName:  identity[0]?.screenname  ?? '',
-      gameScore:   Number(identity[0]?.gamescore   ?? 0),
-      socialScore: Number(identity[0]?.socialscore ?? 0),
-      nbHandTotal: Number(handsTotal[0].nb),
-      nbHandWeek: Number(handsWeek[0].nb),
-      winCashTotal: Number(cashTotal[0].amount),
-      winCashWeek: Number(cashWeek[0].amount),
-      winSngTotal: Number(sngTotal[0].amount),
-      winSngWeek: Number(sngWeek[0].amount),
-      winTournamentTotal: Number(tournTotal[0].amount),
-      winTournamentWeek: Number(tournWeek[0].amount),
-      nbTournamentTotal: Number(nbTourn[0].nb),
-      nbWonTournamentTotal: Number(nbWonTourn[0].nb),
-      nbSngTotal: Number(nbSng[0].nb),
+      screenName:  identity?.screenname  ?? '',
+      gameScore:   Number(identity?.gamescore   ?? 0),
+      socialScore: Number(identity?.socialscore ?? 0),
+      nbHandTotal: handsTotal,
+      nbHandWeek: handsWeek,
+      winCashTotal: cashTotal,
+      winCashWeek: cashWeek,
+      winSngTotal: sngTotal,
+      winSngWeek: sngWeek,
+      winTournamentTotal: tournTotal,
+      winTournamentWeek: tournWeek,
+      nbTournamentTotal: nbTourn,
+      nbWonTournamentTotal: nbWonTourn,
+      nbSngTotal: nbSng,
     };
   }
 }
