@@ -27,6 +27,13 @@ export class PlayerInfoDto {
 
   @ApiPropertyOptional({ example: true, description: 'true si playerIdFrom est ami avec ce joueur' })
   isFriend?: boolean;
+
+  @ApiPropertyOptional({
+    example: 3,
+    description: "Relation avec playerIdFrom (FriendRelationState) : 0=ami, 2=demande reçue, " +
+      '3=demande envoyée, 4=bloqué, -1=aucune',
+  })
+  relationState?: number;
 }
 
 export class FriendDto {

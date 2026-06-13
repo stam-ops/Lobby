@@ -59,34 +59,50 @@ export class SocialService {
 
     if (!players.length) return [];
 
-    // Check friendship for each player
+    // État de relation par joueur (par rapport au chercheur), avec le sens from/to pour
+    // distinguer demande envoyée (je suis from) vs reçue (je suis to). Valeurs renvoyées
+    // = FriendRelationState client : 0=friend, 1=notFriend, 2=pending(reçue), 3=pendingFromMe(envoyée),
+    // 4=blocked, -1=aucune relation.
     const playerIds = players.map(p => p.playerid);
-    const friendIds = new Set<number>();
+    const relationByPlayer = new Map<number, number>();
 
     if (playerIdFrom > 0 && playerIds.length > 0) {
       const placeholders = playerIds.map(() => '?').join(',');
-      const friends = await this.dataSource.query<{ playerid: number }[]>(`
-        SELECT playeridto AS playerid FROM friendrelation
-        WHERE playeridfrom = ? AND friendrelationstate = 0 AND playeridto IN (${placeholders})
-        UNION
-        SELECT playeridfrom AS playerid FROM friendrelation
-        WHERE playeridto = ? AND friendrelationstate = 0 AND playeridfrom IN (${placeholders})
+      const rows = await this.dataSource.query<
+        { playeridfrom: number; playeridto: number; friendrelationstate: number }[]
+      >(`
+        SELECT playeridfrom, playeridto, friendrelationstate FROM friendrelation
+        WHERE (playeridfrom = ? AND playeridto   IN (${placeholders}))
+           OR (playeridto   = ? AND playeridfrom IN (${placeholders}))
       `, [playerIdFrom, ...playerIds, playerIdFrom, ...playerIds]);
 
-      friends.forEach(f => friendIds.add(f.playerid));
+      for (const r of rows) {
+        const otherId = r.playeridfrom === playerIdFrom ? r.playeridto : r.playeridfrom;
+        const iAmFrom = r.playeridfrom === playerIdFrom;
+        let relationState: number;
+        if (r.friendrelationstate === 0)      relationState = 0;        // friend
+        else if (r.friendrelationstate === 2) relationState = iAmFrom ? 3 : 2; // envoyée / reçue
+        else if (r.friendrelationstate === 4) relationState = 4;        // blocked
+        else                                  relationState = -1;       // notFriend → aucune
+        relationByPlayer.set(otherId, relationState);
+      }
     }
 
-    return players.map(p => ({
-      playerId: p.playerid,
-      screenName: p.screenname,
-      fbUid: p.fbuid,
-      firstName: p.firstname,
-      lastName: p.lastname,
-      accountType: p.accounttype,
-      gameScore: p.gamescore,
-      socialScore: p.socialscore,
-      isFriend: friendIds.has(p.playerid),
-    }));
+    return players.map(p => {
+      const relationState = relationByPlayer.get(p.playerid) ?? -1;
+      return {
+        playerId: p.playerid,
+        screenName: p.screenname,
+        fbUid: p.fbuid,
+        firstName: p.firstname,
+        lastName: p.lastname,
+        accountType: p.accounttype,
+        gameScore: p.gamescore,
+        socialScore: p.socialscore,
+        isFriend: relationState === 0,
+        relationState,
+      };
+    });
   }
 
   // Source: Social.java → getFriends(playerId, max) — bidirectionnel via friendrelation.
