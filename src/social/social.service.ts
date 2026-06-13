@@ -225,9 +225,15 @@ export class SocialService {
   async getPlayerStats(playerId: number): Promise<PlayerStatsDto> {
     const weekStart = `(CURDATE() - INTERVAL WEEKDAY(NOW()) DAY)`;
 
-    const [handsTotal, handsWeek, cashTotal, cashWeek,
+    const [identity, handsTotal, handsWeek, cashTotal, cashWeek,
            sngTotal, sngWeek, tournTotal, tournWeek,
            nbTourn, nbWonTourn, nbSng] = await Promise.all([
+      // Identité + score XP du joueur (screenname éditable + gamescore pour le niveau)
+      this.dataSource.query<{ screenname: string; gamescore: number; socialscore: number }[]>(
+        `SELECT pi.screenname, pa.gamescore, pa.socialscore
+         FROM playerinfos pi
+         JOIN playeraccount pa ON pa.playerid = pi.playerid
+         WHERE pi.playerid = ?`, [playerId]),
       // Mains totales
       this.dataSource.query<{ nb: number }[]>(
         `SELECT COUNT(*) AS nb FROM gametableplayer WHERE playerid = ?`, [playerId]),
@@ -291,6 +297,9 @@ export class SocialService {
 
     return {
       playerId,
+      screenName:  identity[0]?.screenname  ?? '',
+      gameScore:   Number(identity[0]?.gamescore   ?? 0),
+      socialScore: Number(identity[0]?.socialscore ?? 0),
       nbHandTotal: Number(handsTotal[0].nb),
       nbHandWeek: Number(handsWeek[0].nb),
       winCashTotal: Number(cashTotal[0].amount),

@@ -80,6 +80,15 @@ export class PlayerStatsDto {
   @ApiProperty({ example: 123 })
   playerId: number;
 
+  @ApiProperty({ example: 'JohnDoe', description: 'playerinfos.screenname (pseudo poker, éditable)' })
+  screenName: string;
+
+  @ApiProperty({ example: 12450, description: 'playeraccount.gamescore (points XP → niveau)' })
+  gameScore: number;
+
+  @ApiProperty({ example: 320, description: 'playeraccount.socialscore' })
+  socialScore: number;
+
   @ApiProperty({ example: 1250, description: 'Nombre total de mains jouées' })
   nbHandTotal: number;
 
