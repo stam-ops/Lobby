@@ -43,6 +43,7 @@ export class SocialService {
         WHERE n.playerid = ?
           AND n.notificationtype IN (${MANDATORY_NOTIF_TYPES.join(',')})
           AND n.isconsumed = 0
+          AND COALESCE(n.bonusconsumed, 0) = 0
         ORDER BY n.creationts DESC
       `, [playerId]),
       this.dataSource.query<NotificationDto[]>(`
