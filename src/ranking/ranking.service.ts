@@ -201,7 +201,7 @@ export class RankingService {
     const playerRows = await this.dataSource.query<any[]>(`
       SELECT
         pa.gamescore, pa.socialscore, pi.screenname, pi.fbuid,
-        p.accounttype, UNIX_TIMESTAMP(p.endvipts) AS endVipTs, p.subscription,
+        p.accounttype, UNIX_TIMESTAMP(p.endvipts) AS endVipTs, 0 AS subscription,
         ((SELECT COUNT(*) FROM playeraccount pa2
           WHERE pa2.gamescore + pa2.socialscore > pa.gamescore + pa.socialscore) + 1) AS \`rank\`
       FROM playeraccount pa
@@ -231,7 +231,7 @@ export class RankingService {
     const [before, after] = await Promise.all([
       this.dataSource.query<any[]>(`
         SELECT pi.playerid, pa.gamescore, pa.socialscore, pi.screenname, pi.fbuid,
-               p.accounttype, UNIX_TIMESTAMP(p.endvipts) AS endVipTs, p.subscription
+               p.accounttype, UNIX_TIMESTAMP(p.endvipts) AS endVipTs, 0 AS subscription
         FROM playeraccount pa
         JOIN playerinfos pi ON pi.playerid = pa.playerid
         JOIN player      p  ON p.playerid  = pa.playerid
@@ -241,7 +241,7 @@ export class RankingService {
       `, [totalScore, playerId, nBefore]),
       this.dataSource.query<any[]>(`
         SELECT pi.playerid, pa.gamescore, pa.socialscore, pi.screenname, pi.fbuid,
-               p.accounttype, UNIX_TIMESTAMP(p.endvipts) AS endVipTs, p.subscription
+               p.accounttype, UNIX_TIMESTAMP(p.endvipts) AS endVipTs, 0 AS subscription
         FROM playeraccount pa
         JOIN playerinfos pi ON pi.playerid = pa.playerid
         JOIN player      p  ON p.playerid  = pa.playerid
@@ -270,12 +270,38 @@ export class RankingService {
         pi.fbuid                             AS fbUid,
         p.accounttype                        AS accountType,
         UNIX_TIMESTAMP(p.endvipts)           AS endVipTs,
-        p.subscription                       AS subscription
+        0                                    AS subscription
       FROM playeraccount pa
       JOIN playerinfos pi ON pi.playerid = pa.playerid
       JOIN player      p  ON p.playerid  = pa.playerid
       ORDER BY pa.gamescore + pa.socialscore DESC
       LIMIT ?
     `, [number]);
+  }
+
+  // Classement parmi les amis : le joueur + ses amis (bidirectionnel, friendrelationstate=0),
+  // triés par score total (gamescore+socialscore) décroissant. Le client en déduit le rang
+  // (index+1) et surligne sa propre ligne.
+  getFriendsRanking(playerId: number): Promise<PlayerRankRowDto[]> {
+    return this.dataSource.query<PlayerRankRowDto[]>(`
+      SELECT pi.playerid                AS playerId,
+             pi.screenname              AS screenName,
+             pi.fbuid                   AS fbUid,
+             pa.gamescore               AS gameScore,
+             pa.socialscore             AS socialScore,
+             p.accounttype              AS accountType,
+             UNIX_TIMESTAMP(p.endvipts) AS endVipTs,
+             0                          AS subscription
+      FROM playeraccount pa
+      JOIN playerinfos pi ON pi.playerid = pa.playerid
+      JOIN player      p  ON p.playerid  = pa.playerid
+      WHERE pa.playerid = ?
+         OR pa.playerid IN (
+           SELECT fr.playeridto   FROM friendrelation fr WHERE fr.playeridfrom = ? AND fr.friendrelationstate = 0
+           UNION
+           SELECT fr.playeridfrom FROM friendrelation fr WHERE fr.playeridto   = ? AND fr.friendrelationstate = 0
+         )
+      ORDER BY pa.gamescore + pa.socialscore DESC
+    `, [playerId, playerId, playerId]);
   }
 }

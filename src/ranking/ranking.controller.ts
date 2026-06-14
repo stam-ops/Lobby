@@ -97,4 +97,12 @@ export class RankingController {
   getPlayerTop(@Param('number', ParseIntPipe) number: number) {
     return this.ranking.getPlayerTop(number);
   }
+
+  @ApiOperation({ summary: 'Classement parmi les amis (le joueur + ses amis, triés par score)' })
+  @ApiParam({ name: 'playerId', type: Number, example: 123 })
+  @ApiResponse({ status: 200, type: [PlayerRankRowDto] })
+  @Get('friends/:playerId')
+  getFriendsRanking(@Param('playerId', ParseIntPipe) playerId: number) {
+    return this.ranking.getFriendsRanking(playerId);
+  }
 }
