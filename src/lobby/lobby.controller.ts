@@ -77,12 +77,21 @@ export class LobbyController {
   }
 
   @ApiTags('Tournaments')
-  @ApiOperation({ summary: 'Tournois auxquels le joueur est inscrit (tournamentsubscription.subscription = 0)' })
+  @ApiOperation({ summary: 'Tournois du club du joueur (JOIN clubplayer) — PAS les inscriptions' })
   @ApiParam({ name: 'playerId', type: Number, example: 123 })
   @ApiResponse({ status: 200, type: [TournamentDto] })
   @Get('tournaments/private/:playerId')
   getPrivateTournaments(@Param('playerId', ParseIntPipe) playerId: number) {
     return this.lobby.getPrivateTournaments(playerId);
+  }
+
+  @ApiTags('Tournaments')
+  @ApiOperation({ summary: 'Tournois auxquels le joueur est INSCRIT (tournamentsubscription.subscription = 0)' })
+  @ApiParam({ name: 'playerId', type: Number, example: 123 })
+  @ApiResponse({ status: 200, type: [TournamentDto] })
+  @Get('tournaments/subscribed/:playerId')
+  getSubscribedTournaments(@Param('playerId', ParseIntPipe) playerId: number) {
+    return this.lobby.getSubscribedTournaments(playerId);
   }
 
   @ApiTags('Tournaments')

@@ -203,6 +203,38 @@ export class LobbyService {
     `);
   }
 
+  // Tournois auxquels le joueur est INSCRIT (tournamentsubscription.subscription = 0 = active).
+  getSubscribedTournaments(playerId: number): Promise<TournamentDto[]> {
+    return this.dataSource.query<TournamentDto[]>(`
+      SELECT
+        t.tournamentid                          AS tournamentId,
+        t.label                                 AS label,
+        ta.maxplayers                           AS maxPlayers,
+        ta.minplayers                           AS minPlayers,
+        t.playerscount                          AS playersCount,
+        t.ingameplayerscount                    AS inGamePlayersCount,
+        ta.gametype                             AS gameType,
+        ta.limittype                            AS limitType,
+        ta.buyin                                AS buyIn,
+        t.gamestate                             AS gameState,
+        t.subscriptionstate                     AS subscriptionState,
+        UNIX_TIMESTAMP(t.starttime)             AS startTime,
+        ta.timeforsubscriptionsbeforestart      AS timeForSubscriptionsBeforeStart,
+        ta.moneytype                            AS moneyType,
+        ta.hasvideo                             AS hasVideo,
+        ta.tablesize                            AS tableSize,
+        ta.structuretype                        AS structureType,
+        ta.addonbreakindex                      AS addonBreakIndex,
+        ta.lastlateregisterlevel                AS lastLateRegisterLevel
+      FROM tournamentsubscription ts
+      JOIN tournament          t  ON t.tournamentid          = ts.tournamentid
+      JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
+      WHERE ts.playerid = ? AND ts.subscription = 0
+        AND t.gamestate IN (0, 1, 2, 3)
+      ORDER BY t.starttime ASC
+    `, [playerId]);
+  }
+
   // Source: Tournament.java → getClubTournaments(playerId)
   // Tournois du club auquel appartient le joueur
 
