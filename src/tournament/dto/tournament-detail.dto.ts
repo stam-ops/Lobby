@@ -207,11 +207,17 @@ export class MixedSNGMissingPlayersDto {
 }
 
 export class PrizeLevelDto {
-  @ApiProperty({ example: 1 })
-  position: number;
+  @ApiProperty({ example: 1, description: 'Rang min de la tranche (1 = 1re place)' })
+  minRank: number;
 
-  @ApiProperty({ example: 50000, description: 'Gain en centimes' })
+  @ApiProperty({ example: 1, description: 'Rang max de la tranche (= minRank si une seule place)' })
+  maxRank: number;
+
+  @ApiProperty({ example: 5000, description: 'Gain en jetons (unité d\'affichage), 0 si lot non-monétaire' })
   amount: number;
+
+  @ApiProperty({ example: '', description: 'Libellé du lot (ticket / objet), vide pour un gain money' })
+  label: string;
 }
 
 export class TournamentPrizeStructureDto {

@@ -169,27 +169,37 @@ export class TournamentService {
     return { levelTime, levels };
   }
 
-  // Source: Tournament.java → getTournamentPrizeStructure(tournamentId)
-  // Simplification: répartition fixe par tranche de joueurs inscrits
+  // Source: PrizeStructure.java → getCurrentSubstructureForTournament(tournamentId)
+  // VRAIE structure de prix : la tranche de prizesubstructure correspondant au nombre de
+  // joueurs inscrits (GREATEST(playerscount, minplayers)), avec ses plages de rangs et lots.
+  // prize.type (PrizesCodes) : 1=money, 4=customMoney (amount en jetons, unité d'affichage),
+  // 2=ticket, 3=objet (label).
   async getTournamentPrizeStructure(tournamentId: number): Promise<TournamentPrizeStructureDto | null> {
     const rows = await this.dataSource.query<any[]>(`
-      SELECT t.playerscount AS playersCount, ta.buyin AS buyIn
+      SELECT pssrr.minrank AS minRank, pssrr.maxrank AS maxRank,
+             p.type AS prizeType, p.amount AS amount, p.label AS label
       FROM tournament t
       JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
+      JOIN prizesubstructure pss
+        ON pss.prizestructureid = ta.prizestructureid
+       AND pss.minplayerscount <= GREATEST(t.playerscount, ta.minplayers)
+       AND pss.maxplayerscount >= GREATEST(t.playerscount, ta.minplayers)
+      JOIN prizesubstructurerankrange pssrr ON pssrr.prizesubstructureid = pss.prizesubstructureid
+      JOIN prize p ON pssrr.prizeid = p.prizeid
       WHERE t.tournamentid = ?
+      ORDER BY pssrr.minrank ASC
     `, [tournamentId]);
 
-    if (!rows.length) return null;
-    const { playersCount, buyIn } = rows[0];
+    const isMoney = (type: number) => type === 1 || type === 4; // moneyPrize | customMoney
+    const levels: PrizeLevelDto[] = rows.map(r => ({
+      minRank: Number(r.minRank),
+      maxRank: Number(r.maxRank),
+      amount:  isMoney(Number(r.prizeType)) ? Number(r.amount) : 0,
+      label:   r.label ?? '',
+    }));
 
-    const totalPrize = buyIn * playersCount;
-    // Répartition approximative : 50%/30%/20% pour les 3 premières places
-    const levels: PrizeLevelDto[] = [];
-    const nb = Number(playersCount);
-    if (nb >= 1) levels.push({ position: 1, amount: Math.floor(totalPrize * 0.50) });
-    if (nb >= 3) levels.push({ position: 2, amount: Math.floor(totalPrize * 0.30) });
-    if (nb >= 5) levels.push({ position: 3, amount: Math.floor(totalPrize * 0.20) });
-
+    // Dotation affichée = somme des gains money de la structure courante.
+    const totalPrize = levels.reduce((s, l) => s + l.amount, 0);
     return { totalPrize, levels };
   }
 
