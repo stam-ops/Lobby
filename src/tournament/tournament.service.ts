@@ -8,8 +8,12 @@ import {
   EventPlayerDto, CGArchetypeTableDto,
 } from './dto/tournament-detail.dto';
 
-// Calcule le niveau de blind courant et les secondes restantes dans ce niveau
-function computeBlindLevel(startTimeSec: number, levelTimeSec: number): { level: number; timeLeft: number } {
+// Calcule le niveau de blind courant et les SECONDES restantes dans ce niveau.
+// ATTENTION : levelTimeMs = gti.leveltime est en MILLISECONDES (le TableServer fait
+// `elapsedMs % levelTime`), alors que startTime est en secondes (UNIX_TIMESTAMP) → on
+// convertit le levelTime en secondes avant de calculer.
+function computeBlindLevel(startTimeSec: number, levelTimeMs: number): { level: number; timeLeft: number } {
+  const levelTimeSec = Math.floor(levelTimeMs / 1000);
   const elapsed = Math.floor(Date.now() / 1000) - startTimeSec;
   if (elapsed <= 0 || levelTimeSec <= 0) return { level: 0, timeLeft: levelTimeSec };
   const level = Math.floor(elapsed / levelTimeSec);

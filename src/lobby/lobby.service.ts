@@ -43,6 +43,7 @@ export class LobbyService {
       JOIN blindvalues        bv  ON bv.blindvaluesid    = bl.blindvaluesid
       WHERE gt.launchstate = 2
         AND gt.tabletype   = 0
+        AND gt.ownerplayerid IS NULL   -- exclure les tables PRIVÉES (owner renseigné)
       ORDER BY gt.gamestate ASC
     `);
   }
