@@ -158,12 +158,15 @@ export class TournamentService {
     if (!rows.length) return null;
     const { levelTime, blindStructureId } = rows[0];
 
+    // NB : la table blindlevel n'a PAS de colonne d'ordre/PK (juste blindstructureid +
+    // blindvaluesid). Le legacy s'appuie sur l'ordre d'insertion. Comme les blindes croissent
+    // à chaque niveau, on ordonne par bigblind/smallblind/ante (déterministe et correct).
     const levels = await this.dataSource.query<BlindLevelDto[]>(`
       SELECT bv.smallblind AS smallBlind, bv.bigblind AS bigBlind, bv.ante AS ante
       FROM blindlevel bl
       JOIN blindvalues bv ON bv.blindvaluesid = bl.blindvaluesid
       WHERE bl.blindstructureid = ?
-      ORDER BY bl.blindlevelid ASC
+      ORDER BY bv.bigblind ASC, bv.smallblind ASC, bv.ante ASC
     `, [blindStructureId]);
 
     return { levelTime, levels };
@@ -213,7 +216,7 @@ export class TournamentService {
       FROM gametableplayer tp
       JOIN gametable gt ON gt.gametableid = tp.gametableid AND gt.tournamentid = ?
       WHERE tp.endts = 0
-      GROUP BY tp.gametableid
+      GROUP BY gt.gametableid
     `, [tournamentId]);
   }
 
