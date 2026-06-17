@@ -30,4 +30,17 @@ export class NotificationDto {
 
   @ApiProperty({ required: false, description: 'Type de bonus réclamable (bonus.bonustype, cf. BonusType) — null si pas un bonus' })
   bonusType?: number;
+
+  // Notifs de résultat de tournoi (type 13) / SNG (type 14) — null sinon.
+  @ApiProperty({ required: false, description: 'Libellé du tournoi/SNG (notif résultat 13/14)' })
+  resultLabel?: string;
+
+  @ApiProperty({ required: false, description: 'Rang final du joueur (notif résultat 13/14)' })
+  resultRank?: number;
+
+  @ApiProperty({ required: false, description: 'Gain remporté (notif résultat 13/14)' })
+  resultPrize?: number;
+
+  @ApiProperty({ required: false, description: 'Nombre de joueurs (notif résultat 13/14)' })
+  resultNbPlayers?: number;
 }

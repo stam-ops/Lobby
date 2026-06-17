@@ -55,7 +55,55 @@ export class SocialService {
       `, [playerId, nbMaxNotifs]),
     ]);
 
-    return [...mandatory, ...optional];
+    const notifs = [...mandatory, ...optional];
+
+    // Enrichissement des notifs de RÉSULTAT de tournoi (13) / SNG (14) avec rang / gain / label /
+    // nb joueurs (cf. legacy Social.getResultTournamentInfos / getResultSNGInfos). `rank` = mot
+    // réservé MySQL 8 → backtické. En batch (1 requête par catégorie) sur les ids concernés.
+    const resultIds = notifs
+      .filter(n => n.notificationType === 13 || n.notificationType === 14)
+      .map(n => n.notificationId);
+    if (resultIds.length) {
+      const ph = resultIds.map(() => '?').join(',');
+      const [tourn, sng] = await Promise.all([
+        this.dataSource.query<any[]>(`
+          SELECT n.notificationid AS notificationId, t.label AS resultLabel,
+                 t.playerscount AS resultNbPlayers, w.amount AS resultPrize, gtp.\`rank\` AS resultRank
+          FROM notification n
+          JOIN genericsubscription    gs  ON gs.genericsubscriptionid     = n.genericsubscriptionid
+          JOIN tournamentsubscription ts  ON ts.tournamentsubscriptionid  = gs.tournamentsubscriptionid
+          JOIN tournament             t   ON t.tournamentid               = ts.tournamentid
+          JOIN wonprize               w   ON w.genericsubscriptionid      = gs.genericsubscriptionid
+          JOIN gametable              gt  ON gt.tournamentid              = t.tournamentid
+          JOIN gametableplayer        gtp ON gtp.gametableid = gt.gametableid AND gtp.playerid = n.playerid
+          WHERE gtp.\`rank\` != 0 AND n.notificationid IN (${ph})
+        `, resultIds).catch(() => []),
+        this.dataSource.query<any[]>(`
+          SELECT n.notificationid AS notificationId, gta.label AS resultLabel,
+                 gta.maxplayers AS resultNbPlayers, w.amount AS resultPrize, gtp.\`rank\` AS resultRank
+          FROM notification n
+          JOIN genericsubscription gs ON gs.genericsubscriptionid = n.genericsubscriptionid
+          JOIN gametablearchetypesubscription gtas ON gtas.gametablearchetypesubscriptionid = gs.gametablearchetypesubscriptionid
+          JOIN gametablearchetype  gta ON gta.gametablearchetypeid = gtas.gametablearchetypeid
+          JOIN gametableplayer     gtp ON gtp.gametableplayerid    = gs.gametableplayerid
+          JOIN wonprize            w   ON w.genericsubscriptionid  = gs.genericsubscriptionid
+          WHERE n.notificationid IN (${ph})
+        `, resultIds).catch(() => []),
+      ]);
+      const byId = new Map<number, any>();
+      [...tourn, ...sng].forEach(r => byId.set(Number(r.notificationId), r));
+      for (const n of notifs) {
+        const r = byId.get(n.notificationId);
+        if (r) {
+          n.resultLabel     = r.resultLabel ?? '';
+          n.resultRank      = Number(r.resultRank);
+          n.resultPrize     = Number(r.resultPrize);
+          n.resultNbPlayers = Number(r.resultNbPlayers);
+        }
+      }
+    }
+
+    return notifs;
   }
 
   // Source: Social.java → getPlayerInfos(playerIdFrom, startScreenName, max)
