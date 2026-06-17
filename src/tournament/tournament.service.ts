@@ -215,17 +215,22 @@ export class TournamentService {
   async getHeroTournamentStatus(
     tournamentId: number,
     playerId: number,
-  ): Promise<{ active: boolean; rank: number }> {
+  ): Promise<{ active: boolean; seated: boolean; rank: number }> {
     const rows = await this.dataSource.query<any[]>(`
-      SELECT SUM(CASE WHEN tp.endts = 0 THEN 1 ELSE 0 END) AS activeCount,
+      SELECT COUNT(*) AS totalRows,
+             SUM(CASE WHEN tp.endts = 0 THEN 1 ELSE 0 END) AS activeCount,
              MAX(tp.\`rank\`) AS heroRank
       FROM gametableplayer tp
       JOIN gametable gt ON gt.gametableid = tp.gametableid AND gt.tournamentid = ?
       WHERE tp.playerid = ?
     `, [tournamentId, playerId]);
+    const totalRows   = Number(rows?.[0]?.totalRows ?? 0);
     const activeCount = Number(rows?.[0]?.activeCount ?? 0);
     const heroRank    = Number(rows?.[0]?.heroRank ?? 0);
-    return { active: activeCount > 0, rank: heroRank };
+    // seated = le héros a EU au moins une place à une table de ce tournoi (≠ simplement inscrit) ;
+    // rank n'est posé qu'au moment du classement (setPrizeStructure, après fin des inscriptions) →
+    // un éliminé en phase précoce a rank=0, d'où l'usage de `seated` côté client.
+    return { active: activeCount > 0, seated: totalRows > 0, rank: heroRank };
   }
 
   /**
