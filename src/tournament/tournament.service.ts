@@ -129,8 +129,10 @@ export class TournamentService {
 
     const { level, timeLeft } = computeBlindLevel(r.startTime, r.levelDuration);
 
-    // Prize pool simplifié: buyin * playersCount (approximation sans rake exact)
-    const prizePool = r.buyIn * r.playersCount;
+    // Prize pool = dotation réelle (rake + rebuys + addons inclus), identique à la distribution
+    // serveur. Fallback sur l'approximation buyin×playersCount si la structure est indisponible.
+    const ps = await this.computeDynamicPrizeStructure(tournamentId);
+    const prizePool = ps ? ps.totalPrize : r.buyIn * r.playersCount;
 
     // Break end: si on est en break (gameState=2), le break dure 1 niveau
     const breakEnd = r.gameState === 2
@@ -182,9 +184,29 @@ export class TournamentService {
   // prize.type (PrizesCodes) : 1=money, 4=customMoney (amount en jetons, unité d'affichage),
   // 2=ticket, 3=objet (label).
   async getTournamentPrizeStructure(tournamentId: number): Promise<TournamentPrizeStructureDto | null> {
+    return this.computeDynamicPrizeStructure(tournamentId);
+  }
+
+  /**
+   * Structure de prix DYNAMIQUE, fidèle au legacy (Tournament.getCurrentPrizeStructure +
+   * PrizeStructureData.redistributeMoney). Les lots de base de la `prizesubstructure` (sélectionnée
+   * par bracket GREATEST(playerscount, minplayers)) sont scalés : on redistribue l'argent
+   * supplémentaire = buyinNetRake × (playersUsed − bracketMin) + (rebuys + addons) × buyinNetRake,
+   * réparti des derniers rangs vers les premiers au prorata des lots de base (entiers, comme le
+   * legacy). Le total renvoyé EST le prize pool réellement payé (rake + rebuys + addons inclus).
+   *
+   * NB : ces colonnes de comptage proviennent de `gametransaction` (type 25 = rebuy, 23 = addon),
+   * exactement comme GameTransaction.getRebuysCount/getAddonsCount côté serveur de jeu.
+   */
+  private async computeDynamicPrizeStructure(tournamentId: number): Promise<TournamentPrizeStructureDto | null> {
     const rows = await this.dataSource.query<any[]>(`
       SELECT pssrr.minrank AS minRank, pssrr.maxrank AS maxRank,
-             p.type AS prizeType, p.amount AS amount, p.label AS label
+             p.type AS prizeType, p.amount AS amount, p.label AS label,
+             pss.minplayerscount AS bracketMin,
+             ta.buyin AS buyIn,
+             GREATEST(t.playerscount, ta.minplayers) AS playersUsed,
+             (SELECT tr.percentage FROM tournamentrake tr
+               WHERE tr.hasvideo = ta.hasvideo ORDER BY tr.tournamentrakeid DESC LIMIT 1) AS rakePercentage
       FROM tournament t
       JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
       JOIN prizesubstructure pss
@@ -196,18 +218,68 @@ export class TournamentService {
       WHERE t.tournamentid = ?
       ORDER BY pssrr.minrank ASC
     `, [tournamentId]);
+    if (!rows.length) return null;
+
+    // Comptage rebuys (type 25) / addons (type 23) via les transactions du tournoi.
+    const countRows = await this.dataSource.query<any[]>(`
+      SELECT
+        (SELECT COUNT(*) FROM gametransaction gt
+           JOIN genericsubscription gs ON gs.genericsubscriptionid = gt.genericsubscriptionid
+           JOIN tournamentsubscription ts ON gs.tournamentsubscriptionid = ts.tournamentsubscriptionid AND ts.tournamentid = ?
+          WHERE gt.type = 25) AS rebuysCount,
+        (SELECT COUNT(*) FROM gametransaction gt
+           JOIN genericsubscription gs ON gs.genericsubscriptionid = gt.genericsubscriptionid
+           JOIN tournamentsubscription ts ON gs.tournamentsubscriptionid = ts.tournamentsubscriptionid AND ts.tournamentid = ?
+          WHERE gt.type = 23) AS addonsCount
+    `, [tournamentId, tournamentId]);
+    const rebuysCount = Number(countRows[0]?.rebuysCount ?? 0);
+    const addonsCount = Number(countRows[0]?.addonsCount ?? 0);
+
+    const meta = rows[0];
+    const buyIn          = Number(meta.buyIn ?? 0);
+    const rakePercentage = Number(meta.rakePercentage ?? 0);
+    const playersUsed    = Number(meta.playersUsed ?? 0);
+    const bracketMin     = Number(meta.bracketMin ?? 0);
+    const buyInMinusRake = Math.floor((buyIn * (100 - rakePercentage)) / 100);
 
     const isMoney = (type: number) => type === 1 || type === 4; // moneyPrize | customMoney
-    const levels: PrizeLevelDto[] = rows.map(r => ({
+    const levels = rows.map(r => ({
       minRank: Number(r.minRank),
       maxRank: Number(r.maxRank),
       amount:  isMoney(Number(r.prizeType)) ? Number(r.amount) : 0,
       label:   r.label ?? '',
+      nbRanks: Number(r.maxRank) - Number(r.minRank) + 1,
     }));
 
-    // Dotation affichée = somme des gains money de la structure courante.
-    const totalPrize = levels.reduce((s, l) => s + l.amount, 0);
-    return { totalPrize, levels };
+    // redistributeMoney(buyinNetRake×(playersUsed−bracketMin) + (rebuys+addons)×buyinNetRake)
+    const amountToRedistribute =
+      buyInMinusRake * (playersUsed - bracketMin) + (rebuysCount + addonsCount) * buyInMinusRake;
+
+    let totalBasic = levels.reduce((s, l) => s + l.amount * l.nbRanks, 0);
+    if (totalBasic > 0 && amountToRedistribute > 0) {
+      let remaining = amountToRedistribute;
+      // Des derniers rangs (perdants) vers les premiers, au prorata du lot de base (entiers).
+      for (let i = levels.length - 1; i >= 0; i--) {
+        const l = levels[i];
+        const basicMoneyPrize = l.nbRanks * l.amount;
+        const prizeToAddForRange = totalBasic > 0 ? Math.floor((remaining * basicMoneyPrize) / totalBasic) : 0;
+        const prizeToAddByPlayer = Math.floor(prizeToAddForRange / l.nbRanks);
+        if (prizeToAddByPlayer > 0) {
+          remaining -= prizeToAddByPlayer * l.nbRanks;
+          l.amount += prizeToAddByPlayer;
+        }
+        totalBasic -= basicMoneyPrize;
+      }
+      // Reliquat → rang 1 uniquement si c'est une plage à un seul rang (comme le legacy).
+      const first = levels[0];
+      if (first && first.minRank === first.maxRank) first.amount += remaining;
+    }
+
+    const outLevels: PrizeLevelDto[] = levels.map(l => ({
+      minRank: l.minRank, maxRank: l.maxRank, amount: l.amount, label: l.label,
+    }));
+    const totalPrize = levels.reduce((s, l) => s + l.amount * l.nbRanks, 0);
+    return { totalPrize, levels: outLevels };
   }
 
   // Source: Tournament.java → getTablesTournamentInfo(tournamentId)
