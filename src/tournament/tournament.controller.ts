@@ -72,6 +72,17 @@ export class TournamentController {
     return this.svc.getPrizePoolByTable(tableId);
   }
 
+  @ApiOperation({ summary: 'Statut du héros dans un tournoi (actif / éliminé + rang) — badge « Éliminé »' })
+  @ApiParam({ name: 'id', type: Number, example: 55 })
+  @ApiQuery({ name: 'playerId', type: Number })
+  @Get(':id/hero-status')
+  getHeroTournamentStatus(
+    @Param('id', ParseIntPipe) id: number,
+    @Query('playerId', ParseIntPipe) playerId: number,
+  ) {
+    return this.svc.getHeroTournamentStatus(id, playerId);
+  }
+
   @ApiOperation({ summary: 'Info blind en cours d\'un tournoi (Tournament.java → getTournamentBlindInfo)' })
   @ApiParam({ name: 'id', type: Number, example: 55 })
   @ApiResponse({ status: 200, type: TournamentBlindInfoDto })

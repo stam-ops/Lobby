@@ -206,6 +206,29 @@ export class TournamentService {
   }
 
   /**
+   * Statut du HÉROS dans un tournoi (pour le badge « Éliminé » de la popup).
+   * Un joueur encore en lice a au moins une ligne `gametableplayer` active (endts = 0) ; à
+   * l'élimination le serveur pose `endts` (timestamp) + `rank` (rang final, cf.
+   * GameTablePlayer.java). Donc : active = il reste une ligne endts=0 ; sinon rank = son rang
+   * final (rank 1 = vainqueur, > 1 = éliminé). `rank` est un mot réservé MySQL 8 → backtické.
+   */
+  async getHeroTournamentStatus(
+    tournamentId: number,
+    playerId: number,
+  ): Promise<{ active: boolean; rank: number }> {
+    const rows = await this.dataSource.query<any[]>(`
+      SELECT SUM(CASE WHEN tp.endts = 0 THEN 1 ELSE 0 END) AS activeCount,
+             MAX(tp.\`rank\`) AS heroRank
+      FROM gametableplayer tp
+      JOIN gametable gt ON gt.gametableid = tp.gametableid AND gt.tournamentid = ?
+      WHERE tp.playerid = ?
+    `, [tournamentId, playerId]);
+    const activeCount = Number(rows?.[0]?.activeCount ?? 0);
+    const heroRank    = Number(rows?.[0]?.heroRank ?? 0);
+    return { active: activeCount > 0, rank: heroRank };
+  }
+
+  /**
    * Structure de prix DYNAMIQUE, fidèle au legacy (Tournament.getCurrentPrizeStructure +
    * PrizeStructureData.redistributeMoney). Les lots de base de la `prizesubstructure` (sélectionnée
    * par bracket GREATEST(playerscount, minplayers)) sont scalés : on redistribue l'argent
