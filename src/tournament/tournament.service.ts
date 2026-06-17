@@ -188,6 +188,24 @@ export class TournamentService {
   }
 
   /**
+   * Prize pool courant d'un tournoi à partir d'un tableId (la popup info SUR la table ne connaît
+   * pas le tournamentId — INFO_TABLE ne le porte pas). On résout `gametable.tournamentid` puis on
+   * réutilise le calcul dynamique (rake + rebuys + addons). Renvoie null si la table n'est pas
+   * une table de tournoi.
+   */
+  async getPrizePoolByTable(tableId: number): Promise<{ tournamentId: number; prizePool: number } | null> {
+    const rows = await this.dataSource.query<any[]>(
+      `SELECT tournamentid AS tournamentId FROM gametable
+        WHERE gametableid = ? AND tournamentid IS NOT NULL`,
+      [tableId],
+    );
+    const tournamentId = rows?.[0]?.tournamentId;
+    if (tournamentId == null) return null;
+    const ps = await this.computeDynamicPrizeStructure(Number(tournamentId));
+    return { tournamentId: Number(tournamentId), prizePool: ps ? ps.totalPrize : 0 };
+  }
+
+  /**
    * Structure de prix DYNAMIQUE, fidèle au legacy (Tournament.getCurrentPrizeStructure +
    * PrizeStructureData.redistributeMoney). Les lots de base de la `prizesubstructure` (sélectionnée
    * par bracket GREATEST(playerscount, minplayers)) sont scalés : on redistribue l'argent

@@ -65,6 +65,13 @@ export class TournamentController {
     return this.svc.getTournamentTables(id);
   }
 
+  @ApiOperation({ summary: 'Prize pool courant d\'un tournoi à partir d\'un tableId (popup info sur la table)' })
+  @ApiParam({ name: 'tableId', type: Number, example: 1234 })
+  @Get('by-table/:tableId/prize-pool')
+  getPrizePoolByTable(@Param('tableId', ParseIntPipe) tableId: number) {
+    return this.svc.getPrizePoolByTable(tableId);
+  }
+
   @ApiOperation({ summary: 'Info blind en cours d\'un tournoi (Tournament.java → getTournamentBlindInfo)' })
   @ApiParam({ name: 'id', type: Number, example: 55 })
   @ApiResponse({ status: 200, type: TournamentBlindInfoDto })
