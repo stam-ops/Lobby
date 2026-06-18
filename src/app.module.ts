@@ -7,6 +7,7 @@ import { RankingModule } from './ranking/ranking.module';
 import { SocialModule } from './social/social.module';
 import { ClubModule } from './club/club.module';
 import { TournamentModule } from './tournament/tournament.module';
+import { OffersModule } from './offers/offers.module';
 import { GametableEntity } from './lobby/entities/gametable.entity';
 import { GametablePlayerEntity } from './lobby/entities/gametable-player.entity';
 import { TournamentEntity } from './lobby/entities/tournament.entity';
@@ -39,6 +40,7 @@ import { TournamentSubscriptionEntity } from './lobby/entities/tournament-subscr
     SocialModule,
     ClubModule,
     TournamentModule,
+    OffersModule,
   ],
 })
 export class AppModule {}

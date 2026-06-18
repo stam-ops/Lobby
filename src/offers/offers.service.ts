@@ -1,0 +1,50 @@
+import { Injectable } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+import { OfferDto } from './dto/offer.dto';
+
+@Injectable()
+export class OffersService {
+  constructor(private readonly dataSource: DataSource) {}
+
+  /**
+   * Offres IAP actives, triées : packs (producttype 0) puis abonnements VIP (1), chacun par
+   * sortorder. La table `offer` est un en-tête auto-suffisant (contenus dénormalisés :
+   * pamount / camamount / vipdays). Le vrai prix débité vient du store via `productid` ;
+   * `pricecents`/`currency` ne servent qu'à l'affichage / fallback.
+   */
+  async getOffers(): Promise<OfferDto[]> {
+    const rows = await this.dataSource.query<any[]>(`
+      SELECT offerid          AS offerId,
+             producttype      AS productType,
+             productid        AS productId,
+             pricecents       AS priceCents,
+             currency         AS currency,
+             pamount          AS pAmount,
+             camamount        AS camAmount,
+             vipdays          AS vipDays,
+             billingperiod    AS billingPeriod,
+             savepercentage   AS savePercentage,
+             isbest           AS isBest,
+             labelkey         AS labelKey,
+             firstpurchaseonly AS firstPurchaseOnly
+      FROM offer
+      WHERE active = 1
+      ORDER BY producttype ASC, sortorder ASC
+    `);
+    return rows.map(r => ({
+      offerId:           Number(r.offerId),
+      productType:       Number(r.productType),
+      productId:         r.productId ?? '',
+      priceCents:        Number(r.priceCents),
+      currency:          r.currency ?? 'EUR',
+      pAmount:           Number(r.pAmount),
+      camAmount:         Number(r.camAmount),
+      vipDays:           Number(r.vipDays),
+      billingPeriod:     Number(r.billingPeriod),
+      savePercentage:    Number(r.savePercentage),
+      isBest:            Number(r.isBest) === 1,
+      labelKey:          r.labelKey ?? '',
+      firstPurchaseOnly: Number(r.firstPurchaseOnly) === 1,
+    }));
+  }
+}
