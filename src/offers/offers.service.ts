@@ -28,7 +28,9 @@ export class OffersService {
              labelkey         AS labelKey,
              firstpurchaseonly AS firstPurchaseOnly
       FROM offer
-      WHERE active = 1
+      -- productid <> '' AND pricecents > 0 : exclut les anciennes lignes legacy de la table
+      -- (avant l'ALTER) qui, avec active DEFAULT 1 + colonnes DEFAULT 0, ressortiraient en offres à 0.
+      WHERE active = 1 AND productid <> '' AND pricecents > 0
       ORDER BY producttype ASC, sortorder ASC
     `);
     return rows.map(r => ({
