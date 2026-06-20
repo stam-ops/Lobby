@@ -89,6 +89,9 @@ export class PlayerStatsDto {
   @ApiProperty({ required: false, example: false, description: 'Ban vidéo global actif (bannedcamall) — overlay modérateur : réactiver plutôt que bannir' })
   camBanned?: boolean;
 
+  @ApiProperty({ required: false, example: 1, description: 'Relation viewer↔joueur (FriendRelationState) : 0=ami, 1=aucune, 2=demande reçue, 3=demande envoyée, 4=bloqué' })
+  relationState?: number;
+
   @ApiProperty({ example: 'JohnDoe', description: 'playerinfos.screenname (pseudo poker, éditable)' })
   screenName: string;
 

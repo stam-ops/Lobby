@@ -373,16 +373,34 @@ export class SocialService {
     // joueur. camBannedByMe = ban 1-à-1 posé par le viewer (directionnel) → réactivable par tout
     // joueur. tchatBanned / camBanned = bans GLOBAUX du joueur (bannedplayer / bannedcamall) →
     // réactivables côté UI par un modérateur uniquement (action gated serveur dans BanTask).
-    let camBannedByMe = false, tchatBanned = false, camBanned = false;
+    // relationState (convention client FriendRelationState) : 0=friend, 1=notFriend (aucune relation),
+    // 2=pending reçue, 3=pending envoyée, 4=blocked. Permet à l'overlay de proposer ajouter/bloquer.
+    let camBannedByMe = false, tchatBanned = false, camBanned = false, relationState = 1;
     if (viewer && viewer !== playerId) {
       const flag = (sql: string, params: unknown[]) =>
         this.dataSource.query<{ nb: number }[]>(sql, params)
           .then(r => Number(r[0]?.nb ?? 0) > 0).catch(() => false);
-      [camBannedByMe, tchatBanned, camBanned] = await Promise.all([
+      const relQ = this.dataSource
+        .query<{ playeridfrom: number; friendrelationstate: number }[]>(
+          `SELECT playeridfrom, friendrelationstate FROM friendrelation
+           WHERE (playeridfrom = ? AND playeridto = ?) OR (playeridfrom = ? AND playeridto = ?) LIMIT 1`,
+          [viewer, playerId, playerId, viewer],
+        )
+        .catch(() => [] as { playeridfrom: number; friendrelationstate: number }[]);
+      const [cbm, tb, cb, rel] = await Promise.all([
         flag(`SELECT COUNT(*) AS nb FROM bannedcamone WHERE playerid1 = ? AND playerid2 = ? AND endts = 0`, [viewer, playerId]),
         flag(`SELECT COUNT(*) AS nb FROM bannedplayer WHERE playerid = ? AND endts = 0`, [playerId]),
         flag(`SELECT COUNT(*) AS nb FROM bannedcamall WHERE playerid = ? AND endts = 0`, [playerId]),
+        relQ,
       ]);
+      camBannedByMe = cbm; tchatBanned = tb; camBanned = cb;
+      const r = rel[0];
+      if (r) {
+        if (r.friendrelationstate === 0)      relationState = 0;                          // friend
+        else if (r.friendrelationstate === 2) relationState = r.playeridfrom === viewer ? 3 : 2; // envoyée / reçue
+        else if (r.friendrelationstate === 4) relationState = 4;                          // blocked
+        else                                  relationState = 1;                          // notFriend
+      }
     }
 
     return {
@@ -390,6 +408,7 @@ export class SocialService {
       camBannedByMe,
       tchatBanned,
       camBanned,
+      relationState,
       screenName:  identity?.screenname  ?? '',
       gameScore:   Number(identity?.gamescore   ?? 0),
       socialScore: Number(identity?.socialscore ?? 0),
