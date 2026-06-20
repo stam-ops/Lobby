@@ -89,9 +89,13 @@ export class SocialController {
 
   @ApiOperation({ summary: 'Statistiques d\'un joueur (Social.java → getPlayerStats)' })
   @ApiParam({ name: 'playerId', type: Number, example: 123 })
+  @ApiQuery({ name: 'viewer', required: false, type: Number, example: 123, description: 'Joueur qui consulte → renvoie camBannedByMe (ban vidéo 1-à-1 posé par lui)' })
   @ApiResponse({ status: 200, type: PlayerStatsDto })
   @Get('stats/:playerId')
-  getPlayerStats(@Param('playerId', ParseIntPipe) playerId: number) {
-    return this.social.getPlayerStats(playerId);
+  getPlayerStats(
+    @Param('playerId', ParseIntPipe) playerId: number,
+    @Query('viewer', new ParseIntPipe({ optional: true })) viewer?: number,
+  ) {
+    return this.social.getPlayerStats(playerId, viewer);
   }
 }

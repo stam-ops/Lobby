@@ -80,6 +80,9 @@ export class PlayerStatsDto {
   @ApiProperty({ example: 123 })
   playerId: number;
 
+  @ApiProperty({ required: false, example: false, description: 'Ban vidéo 1-à-1 posé par le viewer (?viewer=) sur ce joueur — overlay de siège : réactiver plutôt que bannir' })
+  camBannedByMe?: boolean;
+
   @ApiProperty({ example: 'JohnDoe', description: 'playerinfos.screenname (pseudo poker, éditable)' })
   screenName: string;
 

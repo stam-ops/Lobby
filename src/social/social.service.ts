@@ -275,8 +275,11 @@ export class SocialService {
     `, [playerId, max]);
   }
 
-  // Source: Social.java → getPlayerStats(playerId) — agrège plusieurs requêtes
-  async getPlayerStats(playerId: number): Promise<PlayerStatsDto> {
+  // Source: Social.java → getPlayerStats(playerId) — agrège plusieurs requêtes.
+  // `viewer` (optionnel) = joueur qui consulte : sert à renvoyer camBannedByMe, vrai si CE
+  // viewer a posé un ban vidéo 1-à-1 actif sur playerId (maindb.bannedcamone, directionnel) →
+  // permet à l'overlay de siège de proposer la RÉACTIVATION plutôt que le ban.
+  async getPlayerStats(playerId: number, viewer?: number): Promise<PlayerStatsDto> {
     const weekStart = `(CURDATE() - INTERVAL WEEKDAY(NOW()) DAY)`;
 
     // Helpers de résilience : ce endpoint agrège des requêtes legacy historiquement
@@ -366,8 +369,21 @@ export class SocialService {
     ]);
     const identity = identityRows[0];
 
+    // Ban vidéo 1-à-1 posé PAR le viewer SUR ce joueur (directionnel, ban actif endts=0).
+    let camBannedByMe = false;
+    if (viewer && viewer !== playerId) {
+      camBannedByMe = await this.dataSource
+        .query<{ nb: number }[]>(
+          `SELECT COUNT(*) AS nb FROM bannedcamone WHERE playerid1 = ? AND playerid2 = ? AND endts = 0`,
+          [viewer, playerId],
+        )
+        .then(r => Number(r[0]?.nb ?? 0) > 0)
+        .catch(() => false);
+    }
+
     return {
       playerId,
+      camBannedByMe,
       screenName:  identity?.screenname  ?? '',
       gameScore:   Number(identity?.gamescore   ?? 0),
       socialScore: Number(identity?.socialscore ?? 0),
