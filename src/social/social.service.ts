@@ -369,21 +369,27 @@ export class SocialService {
     ]);
     const identity = identityRows[0];
 
-    // Ban vidéo 1-à-1 posé PAR le viewer SUR ce joueur (directionnel, ban actif endts=0).
-    let camBannedByMe = false;
+    // Statut de ban (overlay de siège) — calculé seulement quand un viewer consulte un AUTRE
+    // joueur. camBannedByMe = ban 1-à-1 posé par le viewer (directionnel) → réactivable par tout
+    // joueur. tchatBanned / camBanned = bans GLOBAUX du joueur (bannedplayer / bannedcamall) →
+    // réactivables côté UI par un modérateur uniquement (action gated serveur dans BanTask).
+    let camBannedByMe = false, tchatBanned = false, camBanned = false;
     if (viewer && viewer !== playerId) {
-      camBannedByMe = await this.dataSource
-        .query<{ nb: number }[]>(
-          `SELECT COUNT(*) AS nb FROM bannedcamone WHERE playerid1 = ? AND playerid2 = ? AND endts = 0`,
-          [viewer, playerId],
-        )
-        .then(r => Number(r[0]?.nb ?? 0) > 0)
-        .catch(() => false);
+      const flag = (sql: string, params: unknown[]) =>
+        this.dataSource.query<{ nb: number }[]>(sql, params)
+          .then(r => Number(r[0]?.nb ?? 0) > 0).catch(() => false);
+      [camBannedByMe, tchatBanned, camBanned] = await Promise.all([
+        flag(`SELECT COUNT(*) AS nb FROM bannedcamone WHERE playerid1 = ? AND playerid2 = ? AND endts = 0`, [viewer, playerId]),
+        flag(`SELECT COUNT(*) AS nb FROM bannedplayer WHERE playerid = ? AND endts = 0`, [playerId]),
+        flag(`SELECT COUNT(*) AS nb FROM bannedcamall WHERE playerid = ? AND endts = 0`, [playerId]),
+      ]);
     }
 
     return {
       playerId,
       camBannedByMe,
+      tchatBanned,
+      camBanned,
       screenName:  identity?.screenname  ?? '',
       gameScore:   Number(identity?.gamescore   ?? 0),
       socialScore: Number(identity?.socialscore ?? 0),

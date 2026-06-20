@@ -83,6 +83,12 @@ export class PlayerStatsDto {
   @ApiProperty({ required: false, example: false, description: 'Ban vidéo 1-à-1 posé par le viewer (?viewer=) sur ce joueur — overlay de siège : réactiver plutôt que bannir' })
   camBannedByMe?: boolean;
 
+  @ApiProperty({ required: false, example: false, description: 'Ban tchat global actif (bannedplayer) — overlay modérateur : réactiver plutôt que bannir' })
+  tchatBanned?: boolean;
+
+  @ApiProperty({ required: false, example: false, description: 'Ban vidéo global actif (bannedcamall) — overlay modérateur : réactiver plutôt que bannir' })
+  camBanned?: boolean;
+
   @ApiProperty({ example: 'JohnDoe', description: 'playerinfos.screenname (pseudo poker, éditable)' })
   screenName: string;
 
