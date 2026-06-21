@@ -94,8 +94,10 @@ export class SocialController {
   @Get('stats/:playerId')
   getPlayerStats(
     @Param('playerId', ParseIntPipe) playerId: number,
-    @Query('viewer', new ParseIntPipe({ optional: true })) viewer?: number,
+    // viewer optionnel : parsé à la main (ParseIntPipe rejette l'absence selon la version Nest).
+    @Query('viewer') viewer?: string,
   ) {
-    return this.social.getPlayerStats(playerId, viewer);
+    const viewerId = Number(viewer);
+    return this.social.getPlayerStats(playerId, Number.isFinite(viewerId) ? viewerId : undefined);
   }
 }
