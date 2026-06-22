@@ -23,9 +23,10 @@ export class SocialService {
              n.isread AS isRead, n.isconsumed AS isConsumed,
              COALESCE(
                CASE WHEN fr.playeridfrom = n.playerid THEN fr.playeridto ELSE fr.playeridfrom END,
-               cp.playeridfrom
+               cp.playeridfrom,
+               CASE WHEN sp.playeridfrom = n.playerid THEN sp.playeridto ELSE sp.playeridfrom END
              ) AS fromPlayerId,
-             COALESCE(pifr.screenname, pcp.screenname) AS fromScreenName,
+             COALESCE(pifr.screenname, pcp.screenname, pisp.screenname) AS fromScreenName,
              cp.message        AS campokeMessage,
              cp.invitationtype AS inviteType,
              cp.gametableid    AS gameTableId,
@@ -33,9 +34,12 @@ export class SocialService {
       FROM notification n
       LEFT JOIN friendrelation fr   ON fr.friendrelationid = n.friendrelationid
       LEFT JOIN campoke        cp   ON cp.campokeid        = n.campokeid
+      LEFT JOIN sponsor        sp   ON sp.sponsorid        = n.sponsorid
       LEFT JOIN playerinfos    pifr ON pifr.playerid =
                 (CASE WHEN fr.playeridfrom = n.playerid THEN fr.playeridto ELSE fr.playeridfrom END)
       LEFT JOIN playerinfos    pcp  ON pcp.playerid = cp.playeridfrom
+      LEFT JOIN playerinfos    pisp ON pisp.playerid =
+                (CASE WHEN sp.playeridfrom = n.playerid THEN sp.playeridto ELSE sp.playeridfrom END)
     `;
     const [mandatory, optional] = await Promise.all([
       this.dataSource.query<NotificationDto[]>(`
