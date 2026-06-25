@@ -283,6 +283,16 @@ export class SocialService {
   // `viewer` (optionnel) = joueur qui consulte : sert à renvoyer camBannedByMe, vrai si CE
   // viewer a posé un ban vidéo 1-à-1 actif sur playerId (maindb.bannedcamone, directionnel) →
   // permet à l'overlay de siège de proposer la RÉACTIVATION plutôt que le ban.
+  // Photo de profil Facebook d'un joueur (playerinfos.fbpicture). Sert au rendu de l'avatar 100 sur
+  // la table : le client interroge cet endpoint pour les AUTRES joueurs (le héros a déjà son URL via
+  // le LOGIN_ANSWER). Renvoie '' si non renseignée (joueur non connecté via Facebook).
+  async getPlayerFbPhoto(playerId: number): Promise<{ fbPicture: string }> {
+    const rows = await this.dataSource
+      .query<{ fbpicture: string }[]>('SELECT fbpicture FROM playerinfos WHERE playerid = ?', [playerId])
+      .catch(() => [] as { fbpicture: string }[]);
+    return { fbPicture: rows?.[0]?.fbpicture ?? '' };
+  }
+
   async getPlayerStats(playerId: number, viewer?: number): Promise<PlayerStatsDto> {
     const weekStart = `(CURDATE() - INTERVAL WEEKDAY(NOW()) DAY)`;
 

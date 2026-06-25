@@ -87,6 +87,14 @@ export class SocialController {
     return this.social.getPlayerTournamentLastResults(playerId, max);
   }
 
+  @ApiOperation({ summary: 'Photo de profil Facebook d\'un joueur (playerinfos.fbpicture) — avatar 100 sur la table' })
+  @ApiParam({ name: 'playerId', type: Number, example: 123 })
+  @ApiResponse({ status: 200, schema: { properties: { fbPicture: { type: 'string' } } } })
+  @Get('fbphoto/:playerId')
+  getPlayerFbPhoto(@Param('playerId', ParseIntPipe) playerId: number) {
+    return this.social.getPlayerFbPhoto(playerId);
+  }
+
   @ApiOperation({ summary: 'Statistiques d\'un joueur (Social.java → getPlayerStats)' })
   @ApiParam({ name: 'playerId', type: Number, example: 123 })
   @ApiQuery({ name: 'viewer', required: false, type: Number, example: 123, description: 'Joueur qui consulte → renvoie camBannedByMe (ban vidéo 1-à-1 posé par lui)' })
