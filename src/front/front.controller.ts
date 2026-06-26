@@ -24,6 +24,13 @@ export class FrontController {
     return this.front.getFrontConnectionAddresses();
   }
 
+  @ApiOperation({ summary: 'Load balancer : fqdn d\'un front à utiliser pour la WebSocket client (pondéré par weight, fronts endts=0 non pleins)' })
+  @ApiResponse({ status: 200, schema: { example: { fqdn: 'host:8080' } } })
+  @Get('connect')
+  getConnectFqdn() {
+    return this.front.getConnectFqdn();
+  }
+
   @ApiOperation({ summary: 'Connexions lobby disponibles (Front.java → getLobbyConnection)' })
   @ApiResponse({ status: 200, type: [LobbyConnectionDto] })
   @Get('lobby')
