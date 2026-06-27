@@ -13,6 +13,7 @@ import { GametableEntity } from './lobby/entities/gametable.entity';
 import { GametablePlayerEntity } from './lobby/entities/gametable-player.entity';
 import { TournamentEntity } from './lobby/entities/tournament.entity';
 import { TournamentSubscriptionEntity } from './lobby/entities/tournament-subscription.entity';
+import { BackofficeUserEntity } from './auth/entities/backoffice-user.entity';
 
 @Module({
   imports: [
@@ -31,6 +32,7 @@ import { TournamentSubscriptionEntity } from './lobby/entities/tournament-subscr
           GametablePlayerEntity,
           TournamentEntity,
           TournamentSubscriptionEntity,
+          BackofficeUserEntity,
         ],
         synchronize: false,
       }),

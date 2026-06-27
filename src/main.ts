@@ -15,6 +15,9 @@ async function bootstrap() {
     .addTag('SNG Tables', 'Tables Sit-N-Go')
     .addTag('Tournaments', 'Tournois publics et privés')
     .addTag('Players', 'Joueurs présents sur une table ou un tournoi')
+    .addTag('Auth (backoffice)', 'Login backoffice (JWT)')
+    // Bouton "Authorize" : coller un JWT admin OU un hash de session joueur.
+    .addBearerAuth()
     .build();
 
   const document = SwaggerModule.createDocument(app, config);

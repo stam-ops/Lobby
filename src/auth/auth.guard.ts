@@ -1,6 +1,7 @@
 import {
   CanActivate,
   ExecutionContext,
+  ForbiddenException,
   Injectable,
   Logger,
   UnauthorizedException,
@@ -8,22 +9,25 @@ import {
 import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PlayerSessionService } from './player-session.service';
-import { AuthAudience, AUTH_KEY, PUBLIC_KEY } from './auth.types';
+import { AdminAuthService } from './admin-auth.service';
+import { AdminRole, AuthAudience, AUTH_KEY, PUBLIC_KEY, ROLES_KEY } from './auth.types';
 
 /**
  * Guard global. Pour chaque route (sauf @Public), tente d'authentifier l'appelant selon les
  * audiences exigées par @Auth(...) (défaut : 'player').
  *
+ * Deux identités possibles, toutes deux via `Authorization: Bearer <token>` :
+ *  - admin  : le token est un JWT (vérifié par AdminAuthService) → req.user.kind = 'admin'.
+ *  - player : le token est un hash de session (table playersession)  → req.user.kind = 'player'.
+ * Une route @Auth('player','admin') accepte les deux. On tente le JWT en premier (pas de DB),
+ * puis le hash joueur (lookup DB) en repli.
+ *
  * Mode de déploiement piloté par AUTH_ENFORCE :
- *  - AUTH_ENFORCE != 'true'  → MODE LOG ONLY (défaut) : on n'interdit RIEN. Si l'auth échouerait,
- *    on log un warning [AUTH log-only] et on laisse passer. Permet de déployer côté serveur AVANT
- *    que l'app n'envoie le hash, et de mesurer le trafic non authentifié.
- *  - AUTH_ENFORCE == 'true'  → on rejette (401) les requêtes non authentifiées.
+ *  - != 'true' → LOG ONLY (défaut) : n'interdit RIEN, log les requêtes qui seraient rejetées.
+ *  - == 'true' → rejette (401/403).
  *
- * Dans les deux cas, quand l'auth réussit, `req.user` est renseigné (cf. @CurrentUser()).
- *
- * 'admin' n'est pas encore implémenté : une route 'admin'-only est traitée comme non
- * authentifiable (log-only laisse passer, enforce rejette).
+ * Note : le contrôle de rôle (@Roles) est TOUJOURS appliqué quand l'admin est authentifié,
+ * y compris en log-only (un mauvais rôle = échec d'auth, donc logué/rejeté selon le mode).
  */
 @Injectable()
 export class AuthGuard implements CanActivate {
@@ -33,10 +37,11 @@ export class AuthGuard implements CanActivate {
   constructor(
     private readonly reflector: Reflector,
     private readonly sessions: PlayerSessionService,
+    private readonly adminAuth: AdminAuthService,
     config: ConfigService,
   ) {
     this.enforce = config.get('AUTH_ENFORCE', 'false') === 'true';
-    this.logger.log(`AuthGuard actif — mode ${this.enforce ? 'ENFORCE (401)' : 'LOG ONLY'}`);
+    this.logger.log(`AuthGuard actif — mode ${this.enforce ? 'ENFORCE (401/403)' : 'LOG ONLY'}`);
   }
 
   async canActivate(ctx: ExecutionContext): Promise<boolean> {
@@ -52,29 +57,52 @@ export class AuthGuard implements CanActivate {
         ctx.getClass(),
       ]) ?? ['player'];
 
+    const requiredRoles: AdminRole[] =
+      this.reflector.getAllAndOverride<AdminRole[]>(ROLES_KEY, [
+        ctx.getHandler(),
+        ctx.getClass(),
+      ]) ?? [];
+
     const req = ctx.switchToHttp().getRequest();
     const token = this.extractToken(req);
 
-    if (audiences.includes('player') && token) {
-      const playerId = await this.sessions.resolvePlayerId(token);
-      if (playerId) req.user = { kind: 'player', playerId };
+    let forbiddenRole = false;
+
+    if (token) {
+      if (audiences.includes('admin')) {
+        const payload = await this.adminAuth.verifyToken(token);
+        if (payload) {
+          if (requiredRoles.length && !requiredRoles.includes(payload.role)) {
+            forbiddenRole = true; // JWT valide mais rôle insuffisant
+          } else {
+            req.user = { kind: 'admin', adminId: payload.sub, email: payload.email, role: payload.role };
+          }
+        }
+      }
+      if (!req.user && audiences.includes('player')) {
+        const playerId = await this.sessions.resolvePlayerId(token);
+        if (playerId) req.user = { kind: 'player', playerId };
+      }
     }
-    // 'admin' : à implémenter (AdminJwtGuard) — aucune route admin pour l'instant.
 
     if (req.user) return true;
 
-    const detail =
-      `${req.method} ${req.originalUrl ?? req.url} ` +
-      `(audiences=${audiences.join('|')}, token=${token ? 'présent mais invalide' : 'absent'})`;
+    const reason = forbiddenRole
+      ? `rôle insuffisant (requis: ${requiredRoles.join('|')})`
+      : token
+        ? 'token présent mais invalide'
+        : 'token absent';
+    const detail = `${req.method} ${req.originalUrl ?? req.url} (audiences=${audiences.join('|')}, ${reason})`;
 
     if (this.enforce) {
+      if (forbiddenRole) throw new ForbiddenException('Rôle insuffisant');
       throw new UnauthorizedException('Session invalide ou absente');
     }
     this.logger.warn(`[AUTH log-only] rejetterait : ${detail}`);
     return true;
   }
 
-  /** Bearer header en priorité ; fallback query param `sessionHash` pour la transition. */
+  /** Bearer header en priorité ; fallback query param `sessionHash` pour la transition app. */
   private extractToken(req: any): string | null {
     const header: string | undefined = req.headers?.authorization;
     if (header && header.startsWith('Bearer ')) return header.slice(7).trim();
