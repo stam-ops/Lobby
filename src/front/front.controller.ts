@@ -4,8 +4,10 @@ import { FrontService } from './front.service';
 import { FrontAddressDto } from './dto/front-address.dto';
 import { LobbyConnectionDto } from './dto/lobby-connection.dto';
 import { GeneralParametersDto, GeneralParameters2Dto } from './dto/general-parameters.dto';
+import { Public } from '../auth/auth.decorator';
 
 @ApiTags('Front')
+@Public() // routes de bootstrap / load balancer : appelées AVANT le login, pas de session.
 @Controller('front')
 export class FrontController {
   constructor(private readonly front: FrontService) {}
