@@ -7,6 +7,16 @@ async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   app.useGlobalPipes(new ValidationPipe({ transform: true }));
 
+  // CORS pour le backoffice navigateur. L'app React Native n'est pas concernée (pas un navigateur).
+  // Origines autorisées via CORS_ORIGINS (séparées par des virgules) ; défaut = Vite en dev.
+  app.enableCors({
+    origin: (process.env.CORS_ORIGINS ?? 'http://localhost:5173')
+      .split(',')
+      .map((o) => o.trim()),
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
+  });
+
   const config = new DocumentBuilder()
     .setTitle('LobbyWS API')
     .setDescription('API REST exposant les tables de cash game, SNG et tournois du lobby Campok')
