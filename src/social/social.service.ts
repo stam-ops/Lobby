@@ -48,6 +48,8 @@ export class SocialService {
           AND n.notificationtype IN (${MANDATORY_NOTIF_TYPES.join(',')})
           AND n.isconsumed = 0
           AND COALESCE(n.bonusconsumed, 0) = 0
+          -- Le daily bonus (type 6) expire le jour meme : on ne remonte que celui du jour.
+          AND NOT (n.notificationtype = 6 AND DATE(n.creationts) < CURDATE())
         ORDER BY n.creationts DESC
       `, [playerId]),
       this.dataSource.query<NotificationDto[]>(`
