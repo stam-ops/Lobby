@@ -1,6 +1,7 @@
 import { Body, Controller, ForbiddenException, Post, Query } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ApiExcludeController } from '@nestjs/swagger';
+import { Public } from '../auth/auth.decorator';
 import { WebhooksService } from './webhooks.service';
 
 /**
@@ -11,6 +12,7 @@ import { WebhooksService } from './webhooks.service';
  *    (App Store Server API) ; un secret d'URL optionnel peut être ajouté.
  * Répondre 200 rapidement (le store ré-essaie sinon).
  */
+@Public() // callbacks stores : pas de session joueur (auth = secret d'URL / re-fetch autoritatif Apple)
 @ApiExcludeController()
 @Controller('webhooks')
 export class WebhooksController {
