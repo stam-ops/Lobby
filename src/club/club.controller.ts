@@ -1,5 +1,6 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth } from '../auth/auth.decorator';
 import { ClubService } from './club.service';
 import {
   GiftDto, VipItemDto, ClubDto, ClubPlayerInfoDto,
@@ -8,6 +9,8 @@ import {
 import { TournamentDto } from '../lobby/dto/tournament.dto';
 
 @ApiTags('Club')
+@Auth('player', 'admin')
+@ApiBearerAuth()
 @Controller('club')
 export class ClubController {
   constructor(private readonly club: ClubService) {}

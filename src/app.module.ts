@@ -9,6 +9,7 @@ import { ClubModule } from './club/club.module';
 import { TournamentModule } from './tournament/tournament.module';
 import { OffersModule } from './offers/offers.module';
 import { AuthModule } from './auth/auth.module';
+import { WebhooksModule } from './webhooks/webhooks.module';
 import { GametableEntity } from './lobby/entities/gametable.entity';
 import { GametablePlayerEntity } from './lobby/entities/gametable-player.entity';
 import { TournamentEntity } from './lobby/entities/tournament.entity';
@@ -45,6 +46,7 @@ import { BackofficeUserEntity } from './auth/entities/backoffice-user.entity';
     TournamentModule,
     OffersModule,
     AuthModule,
+    WebhooksModule,
   ],
 })
 export class AppModule {}

@@ -1,10 +1,13 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth } from '../auth/auth.decorator';
 import { SocialService } from './social.service';
 import { NotificationDto } from './dto/notification.dto';
 import { PlayerInfoDto, FriendDto, TournamentResultDto, PlayerStatsDto } from './dto/player-info.dto';
 
 @ApiTags('Social')
+@Auth('player', 'admin')
+@ApiBearerAuth()
 @Controller('social')
 export class SocialController {
   constructor(private readonly social: SocialService) {}

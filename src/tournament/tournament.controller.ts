@@ -1,5 +1,6 @@
 import { Body, Controller, Get, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
-import { ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiBody, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth } from '../auth/auth.decorator';
 import { TournamentService } from './tournament.service';
 import {
   SngStaticInfoDto, TournamentStaticInfoDto, TournamentDynamicInfoDto,
@@ -9,6 +10,8 @@ import {
 } from './dto/tournament-detail.dto';
 
 @ApiTags('Tournament Details')
+@Auth('player', 'admin')
+@ApiBearerAuth()
 @Controller('tournaments')
 export class TournamentController {
   constructor(private readonly svc: TournamentService) {}

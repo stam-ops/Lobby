@@ -1,5 +1,6 @@
 import { Controller, Get, Param, ParseIntPipe } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth } from '../auth/auth.decorator';
 import { LobbyService } from './lobby.service';
 import { CgTableDto } from './dto/cg-table.dto';
 import { SngTableDto } from './dto/sng-table.dto';
@@ -7,6 +8,8 @@ import { TournamentDto } from './dto/tournament.dto';
 import { PlayerStackDto } from './dto/player-stack.dto';
 import { SubscribableArchetypeDto } from './dto/subscribable-archetype.dto';
 
+@Auth('player', 'admin')
+@ApiBearerAuth()
 @Controller('lobby')
 export class LobbyController {
   constructor(private readonly lobby: LobbyService) {}

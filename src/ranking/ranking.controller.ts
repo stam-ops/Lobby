@@ -1,9 +1,12 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { Auth } from '../auth/auth.decorator';
 import { RankingService } from './ranking.service';
 import { RankEntryDto, PlayerRankRowDto, PlayerRankingDto, DailyResultDto } from './dto/rank-entry.dto';
 
 @ApiTags('Ranking')
+@Auth('player', 'admin')
+@ApiBearerAuth()
 @Controller('ranking')
 export class RankingController {
   constructor(private readonly ranking: RankingService) {}
