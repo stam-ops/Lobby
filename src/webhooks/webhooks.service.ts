@@ -252,7 +252,7 @@ export class WebhooksService {
     const issuer = this.config.get<string>('IAP_APPLE_ISSUER_ID');
     const bundle = this.config.get<string>('IAP_APPLE_BUNDLE', 'com.campok.app');
     const key = await importPKCS8(this.appleKeyPem(), 'ES256');
-    const exp = now + 1200;
+    const exp = now + 1140; // < 20 min (Apple rejette un JWT dont l'exp dépasse 20 min → 401)
     const token = await new SignJWT({ bid: bundle })
       .setProtectedHeader({ alg: 'ES256', kid: keyId!, typ: 'JWT' })
       .setIssuer(issuer!)
@@ -276,8 +276,12 @@ export class WebhooksService {
       });
       if (res.status === 404) continue; // pas dans cet environnement → essayer l'autre
       if (!res.ok) {
-        this.logger.warn(`App Store Server API HTTP ${res.status}`);
-        return null;
+        // Apple renvoie un corps JSON { errorCode, errorMessage } → on le loggue pour diagnostiquer
+        // (401 = JWT refusé : key id / issuer id / .p8 / bundle id incohérents, ou horloge/exp).
+        let body = '';
+        try { body = await res.text(); } catch { /* ignore */ }
+        this.logger.warn(`App Store Server API HTTP ${res.status} (${host}) : ${body}`);
+        continue; // tente l'autre environnement au cas où
       }
       const json: any = await res.json();
       const signed = json?.signedTransactionInfo;
