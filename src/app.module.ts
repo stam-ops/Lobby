@@ -11,6 +11,7 @@ import { OffersModule } from './offers/offers.module';
 import { AuthModule } from './auth/auth.module';
 import { PlayersModule } from './players/players.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
+import { WebrtcModule } from './webrtc/webrtc.module';
 import { GametableEntity } from './lobby/entities/gametable.entity';
 import { GametablePlayerEntity } from './lobby/entities/gametable-player.entity';
 import { TournamentEntity } from './lobby/entities/tournament.entity';
@@ -49,6 +50,7 @@ import { BackofficeUserEntity } from './auth/entities/backoffice-user.entity';
     AuthModule,
     PlayersModule,
     WebhooksModule,
+    WebrtcModule,
   ],
 })
 export class AppModule {}
