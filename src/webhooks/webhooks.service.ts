@@ -95,6 +95,7 @@ export class WebhooksService {
       return;
     }
     const notificationType: string = notif?.notificationType;
+    const subtype: string = notif?.subtype; // ex. AUTO_RENEW_DISABLED / AUTO_RENEW_ENABLED / INITIAL_BUY
     const signedTx: string | undefined = notif?.data?.signedTransactionInfo;
     if (!signedTx) return;
 
@@ -128,8 +129,16 @@ export class WebhooksService {
       await this.revokeVip(row.playerid);
       await this.updateSub('ios', originalTransactionId, Date.now(), revoked ? 'revoked' : 'expired');
       this.logger.log(`ASSN fin abo player=${row.playerid} (${notificationType})`);
+    } else if (notificationType === 'DID_CHANGE_RENEWAL_STATUS') {
+      // Résiliation / réactivation du renouvellement auto. Le VIP N'EST PAS coupé : il reste jusqu'à
+      // l'expiration en cours. On met juste à jour le statut (canceled si auto-renew off, sinon active).
+      const status = subtype === 'AUTO_RENEW_DISABLED' ? 'canceled' : 'active';
+      if (expiresMs > 0) await this.setVipUntilMs(row.playerid, expiresMs);
+      await this.updateSub('ios', originalTransactionId, expiresMs > 0 ? expiresMs : null, status);
+      this.logger.log(`ASSN ${status} player=${row.playerid} (renouvellement auto ${subtype || '?'}) `
+        + `VIP jusqu'a ${expiresMs > 0 ? new Date(expiresMs).toISOString() : '?'}`);
     } else if (expiresMs > 0) {
-      // SUBSCRIBED / DID_RENEW / OFFER_REDEEMED / DID_CHANGE_RENEWAL_STATUS… → aligne le VIP sur l'expiry.
+      // SUBSCRIBED / DID_RENEW / OFFER_REDEEMED… → aligne le VIP sur l'expiry.
       await this.setVipUntilMs(row.playerid, expiresMs);
       await this.updateSub('ios', originalTransactionId, expiresMs, 'active');
       // Ledger : Apple fournit le vrai transactionId du renouvellement → orderid = transactionId
@@ -264,9 +273,14 @@ export class WebhooksService {
     return token;
   }
 
-  /** GET la transaction chez Apple (prod puis sandbox). Retourne le payload décodé du signedTransactionInfo. */
+  /**
+   * GET la transaction chez Apple (prod puis sandbox). Retourne le payload décodé du signedTransactionInfo.
+   * Une transaction sandbox renvoie 401/404 sur le host PROD (normal) → on enchaîne sur sandbox sans
+   * bruit. On ne loggue un WARN QUE si AUCUN environnement ne répond (vrai problème : JWT invalide, etc.).
+   */
   private async fetchAppleTransaction(transactionId: string): Promise<any | null> {
     const jwt = await this.appleToken();
+    const errors: string[] = [];
     for (const host of [
       'https://api.storekit.itunes.apple.com',
       'https://api.storekit-sandbox.itunes.apple.com',
@@ -274,24 +288,26 @@ export class WebhooksService {
       const res = await fetch(`${host}/inApps/v1/transactions/${encodeURIComponent(transactionId)}`, {
         headers: { Authorization: `Bearer ${jwt}` },
       });
-      if (res.status === 404) continue; // pas dans cet environnement → essayer l'autre
-      if (!res.ok) {
-        // Apple renvoie un corps JSON { errorCode, errorMessage } → on le loggue pour diagnostiquer
-        // (401 = JWT refusé : key id / issuer id / .p8 / bundle id incohérents, ou horloge/exp).
+      if (res.ok) {
+        const json: any = await res.json();
+        const signed = json?.signedTransactionInfo;
+        if (!signed) return null;
+        try {
+          return decodeJwt(signed);
+        } catch {
+          return null;
+        }
+      }
+      // 404 = juste « pas dans cet environnement » (attendu prod↔sandbox) → silencieux. Le reste (401…)
+      // est noté mais on tente quand même l'autre environnement avant de conclure à un échec.
+      if (res.status !== 404) {
         let body = '';
         try { body = await res.text(); } catch { /* ignore */ }
-        this.logger.warn(`App Store Server API HTTP ${res.status} (${host}) : ${body}`);
-        continue; // tente l'autre environnement au cas où
-      }
-      const json: any = await res.json();
-      const signed = json?.signedTransactionInfo;
-      if (!signed) return null;
-      try {
-        return decodeJwt(signed);
-      } catch {
-        return null;
+        errors.push(`${host} HTTP ${res.status}${body ? ' ' + body : ''}`);
       }
     }
+    // Ici aucun environnement n'a la transaction. On n'alerte que si un vrai échec (≠ simple 404) a eu lieu.
+    if (errors.length) this.logger.warn(`App Store Server API : transaction non récupérée — ${errors.join(' | ')}`);
     return null;
   }
 }
