@@ -10,6 +10,7 @@ import { TournamentModule } from './tournament/tournament.module';
 import { OffersModule } from './offers/offers.module';
 import { AuthModule } from './auth/auth.module';
 import { PlayersModule } from './players/players.module';
+import { ServersModule } from './servers/servers.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebrtcModule } from './webrtc/webrtc.module';
 import { GametableEntity } from './lobby/entities/gametable.entity';
@@ -49,6 +50,7 @@ import { BackofficeUserEntity } from './auth/entities/backoffice-user.entity';
     OffersModule,
     AuthModule,
     PlayersModule,
+    ServersModule,
     WebhooksModule,
     WebrtcModule,
   ],
