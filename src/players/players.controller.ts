@@ -3,7 +3,7 @@ import {
 } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PlayersService } from './players.service';
-import { PlayerListDto } from './dto/player-row.dto';
+import { PlayerDetailDto, PlayerListDto } from './dto/player-row.dto';
 import { BanDto, BanType } from './dto/ban.dto';
 import { Auth, Roles } from '../auth/auth.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
@@ -28,6 +28,14 @@ export class PlayersController {
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
     return this.players.list(search.trim(), Math.min(limit, 200), offset);
+  }
+
+  @Get(':id')
+  @ApiOperation({ summary: 'Fiche détail d\'un joueur' })
+  @ApiResponse({ status: 200, type: PlayerDetailDto })
+  @ApiResponse({ status: 404, description: 'Joueur introuvable' })
+  detail(@Param('id', ParseIntPipe) id: number) {
+    return this.players.detail(id);
   }
 
   @Post(':id/ban')

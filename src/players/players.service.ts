@@ -1,6 +1,6 @@
-import { BadRequestException, Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { PlayerListDto, PlayerRowDto } from './dto/player-row.dto';
+import { PlayerDetailDto, PlayerListDto, PlayerRowDto } from './dto/player-row.dto';
 import { BanType } from './dto/ban.dto';
 
 /**
@@ -19,38 +19,65 @@ export class PlayersService {
     const like = `%${search}%`;
     const searchId = /^\d+$/.test(search) ? Number(search) : -1;
     const where = search
-      ? `WHERE pi.screenname LIKE ? OR pi.email LIKE ? OR pi.playerid = ?`
+      ? `WHERE pi.screenname LIKE ? OR pi.email LIKE ? OR p.playerid = ?`
       : '';
     const whereArgs = search ? [like, like, searchId] : [];
 
     const items = await this.dataSource.query<PlayerRowDto[]>(
       `
-      SELECT pi.playerid AS playerId, pi.screenname AS screenName, pi.email AS email,
-             pi.firstname AS firstName, pi.lastname AS lastName,
-             EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = pi.playerid)                               AS siteBanned,
-             EXISTS(SELECT 1 FROM bannedplayer bp WHERE bp.playerid = pi.playerid AND bp.endts = 0)         AS chatBanned,
-             EXISTS(SELECT 1 FROM bannedcamall bc WHERE bc.playerid = pi.playerid AND bc.endts = 0)         AS camBanned
-      FROM playerinfos pi
+      SELECT p.playerid AS playerId, pi.screenname AS screenName, p.accounttype AS accountType,
+             p.creationts AS creationTs, p.endvipts AS endVipTs, p.toremove AS toRemove,
+             EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid) AS siteBanned
+      FROM player p
+      JOIN playerinfos pi ON pi.playerid = p.playerid
       ${where}
-      ORDER BY pi.playerid DESC
+      ORDER BY p.playerid DESC
       LIMIT ? OFFSET ?
       `,
       [...whereArgs, limit, offset],
     );
 
     const totalRow = await this.dataSource.query<{ total: number }[]>(
-      `SELECT COUNT(*) AS total FROM playerinfos pi ${where}`,
+      `SELECT COUNT(*) AS total FROM player p JOIN playerinfos pi ON pi.playerid = p.playerid ${where}`,
       whereArgs,
     );
 
-    // MySQL renvoie les EXISTS en 0/1 → normaliser en boolean.
+    // MySQL renvoie EXISTS/tinyint en 0/1 → normaliser en boolean.
     for (const it of items) {
       it.siteBanned = !!it.siteBanned;
-      it.chatBanned = !!it.chatBanned;
-      it.camBanned = !!it.camBanned;
+      it.toRemove = !!it.toRemove;
     }
 
     return { items, total: totalRow[0]?.total ?? 0 };
+  }
+
+  async detail(playerId: number): Promise<PlayerDetailDto> {
+    const rows = await this.dataSource.query<PlayerDetailDto[]>(
+      `
+      SELECT p.playerid AS playerId, pi.screenname AS screenName, p.accounttype AS accountType,
+             p.creationts AS creationTs, p.endvipts AS endVipTs, p.toremove AS toRemove,
+             pi.email AS email, pi.firstname AS firstName, pi.lastname AS lastName,
+             pi.sex AS sex, pi.birthdate AS birthdate, pi.signinmethod AS signInMethod,
+             pi.fbuid AS fbUid, pi.os AS os, pi.langid AS langId,
+             pi.tokenfb AS tokenFb, pi.tokenios AS tokenIos,
+             pi.lastrate AS lastRate, pi.lastopinion AS lastOpinion,
+             pi.notifgeneral AS notifGeneral, pi.notifperso AS notifPerso,
+             EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid)                        AS siteBanned,
+             EXISTS(SELECT 1 FROM bannedplayer bp WHERE bp.playerid = p.playerid AND bp.endts = 0)  AS chatBanned,
+             EXISTS(SELECT 1 FROM bannedcamall bc WHERE bc.playerid = p.playerid AND bc.endts = 0)  AS camBanned
+      FROM player p
+      JOIN playerinfos pi ON pi.playerid = p.playerid
+      WHERE p.playerid = ?
+      `,
+      [playerId],
+    );
+    if (!rows.length) throw new NotFoundException(`Joueur ${playerId} introuvable`);
+    const r = rows[0];
+    r.toRemove = !!r.toRemove;
+    r.siteBanned = !!r.siteBanned;
+    r.chatBanned = !!r.chatBanned;
+    r.camBanned = !!r.camBanned;
+    return r;
   }
 
   /** Applique un ban. Idempotent (no-op si déjà actif). moderatorId = backofficeuserid. */
