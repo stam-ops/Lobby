@@ -4,8 +4,7 @@ export class FrontServerDto {
   @ApiProperty() frontId: number;
   @ApiProperty({ nullable: true }) fqdn: string;
   @ApiProperty({ nullable: true, description: 'IPv4 (INET_NTOA)' }) ip: string;
-  @ApiProperty() port: number;
-  @ApiProperty() weight: number;
+  @ApiProperty({ description: 'Le port est inclus dans le fqdn (ex. campok.app:8443)' }) weight: number;
   @ApiProperty() maxConnection: number;
   @ApiProperty({ description: 'Front master' }) master: boolean;
   @ApiProperty({ nullable: true }) startTs: string;

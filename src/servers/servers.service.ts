@@ -29,7 +29,7 @@ export class ServersService {
 
   async fronts(): Promise<FrontServerDto[]> {
     const rows = await this.dataSource.query<FrontServerDto[]>(`
-      SELECT frontid AS frontId, fqdn, INET_NTOA(ip & 4294967295) AS ip, port,
+      SELECT frontid AS frontId, fqdn, INET_NTOA(ip & 4294967295) AS ip,
              weight, maxconnection AS maxConnection, \`master\`,
              startts AS startTs, endts AS endTs,
              (endts = 0) AS active
