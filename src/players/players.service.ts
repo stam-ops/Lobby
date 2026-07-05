@@ -1,7 +1,14 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PlayerDetailDto, PlayerListDto, PlayerRowDto } from './dto/player-row.dto';
 import { BanType } from './dto/ban.dto';
+import { BlacklistService } from './blacklist.service';
+
+/**
+ * Conversion robuste vers boolean. mysql2 peut renvoyer un EXISTS/tinyint sous forme de nombre
+ * (0/1) OU de chaîne ("0"/"1") selon les cas → `!!"0"` vaudrait `true` (piège). On teste la valeur.
+ */
+const toBool = (v: unknown): boolean => v === true || v === 1 || v === '1' || Number(v) === 1;
 
 /**
  * Liste des joueurs + actions de bannissement pour le backoffice.
@@ -13,7 +20,10 @@ import { BanType } from './dto/ban.dto';
  */
 @Injectable()
 export class PlayersService {
-  constructor(private readonly dataSource: DataSource) {}
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly blacklist: BlacklistService,
+  ) {}
 
   async list(search: string, limit: number, offset: number): Promise<PlayerListDto> {
     const like = `%${search}%`;
@@ -42,10 +52,10 @@ export class PlayersService {
       whereArgs,
     );
 
-    // MySQL renvoie EXISTS/tinyint en 0/1 → normaliser en boolean.
+    // MySQL renvoie EXISTS/tinyint en 0/1 (nombre OU chaîne) → conversion robuste.
     for (const it of items) {
-      it.siteBanned = !!it.siteBanned;
-      it.toRemove = !!it.toRemove;
+      it.siteBanned = toBool(it.siteBanned);
+      it.toRemove = toBool(it.toRemove);
     }
 
     return { items, total: totalRow[0]?.total ?? 0 };
@@ -62,9 +72,9 @@ export class PlayersService {
              pi.tokenfb AS tokenFb, pi.tokenios AS tokenIos,
              pi.lastrate AS lastRate, pi.lastopinion AS lastOpinion,
              pi.notifgeneral AS notifGeneral, pi.notifperso AS notifPerso,
-             EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid)                        AS siteBanned,
-             EXISTS(SELECT 1 FROM bannedplayer bp WHERE bp.playerid = p.playerid AND bp.endts = 0)  AS chatBanned,
-             EXISTS(SELECT 1 FROM bannedcamall bc WHERE bc.playerid = p.playerid AND bc.endts = 0)  AS camBanned
+             EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid)                                        AS siteBanned,
+             EXISTS(SELECT 1 FROM bannedplayer bp WHERE bp.playerid = p.playerid AND (bp.endts = 0 OR bp.endts IS NULL)) AS chatBanned,
+             EXISTS(SELECT 1 FROM bannedcamall bc WHERE bc.playerid = p.playerid AND (bc.endts = 0 OR bc.endts IS NULL)) AS camBanned
       FROM player p
       JOIN playerinfos pi ON pi.playerid = p.playerid
       WHERE p.playerid = ?
@@ -73,25 +83,20 @@ export class PlayersService {
     );
     if (!rows.length) throw new NotFoundException(`Joueur ${playerId} introuvable`);
     const r = rows[0];
-    r.toRemove = !!r.toRemove;
-    r.siteBanned = !!r.siteBanned;
-    r.chatBanned = !!r.chatBanned;
-    r.camBanned = !!r.camBanned;
+    r.toRemove = toBool(r.toRemove);
+    r.siteBanned = toBool(r.siteBanned);
+    r.chatBanned = toBool(r.chatBanned);
+    r.camBanned = toBool(r.camBanned);
     return r;
   }
 
   /** Applique un ban. Idempotent (no-op si déjà actif). moderatorId = backofficeuserid. */
   async ban(playerId: number, type: BanType, moderatorId: number): Promise<void> {
     switch (type) {
-      case 'site': {
-        const exists = await this.dataSource.query(
-          `SELECT 1 FROM blacklist WHERE playerid = ? LIMIT 1`, [playerId]);
-        if (!exists.length) {
-          await this.dataSource.query(
-            `INSERT INTO blacklist (playerid) VALUES (?)`, [playerId]);
-        }
+      case 'site':
+        // Ban site = entrée blacklist sur le playerid (délégué au propriétaire de la table).
+        await this.blacklist.add({ playerId });
         return;
-      }
       case 'chat': {
         const active = await this.dataSource.query(
           `SELECT 1 FROM bannedplayer WHERE playerid = ? AND endts = 0 LIMIT 1`, [playerId]);
@@ -113,7 +118,7 @@ export class PlayersService {
     }
   }
 
-  /** Lève un ban chat/cam (endts). Le ban site (blacklist) n'a pas de endts → non supporté. */
+  /** Lève un ban. chat/cam → endts ; site → suppression de l'entrée blacklist du joueur. */
   async unban(playerId: number, type: BanType): Promise<void> {
     switch (type) {
       case 'chat':
@@ -125,7 +130,8 @@ export class PlayersService {
           `UPDATE bannedcamall SET endts = CURRENT_TIMESTAMP WHERE playerid = ? AND endts = 0`, [playerId]);
         return;
       case 'site':
-        throw new BadRequestException('Le déban site (blacklist) n\'est pas supporté (table sans endts).');
+        await this.blacklist.remove({ playerId });
+        return;
     }
   }
 }
