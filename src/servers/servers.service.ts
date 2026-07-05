@@ -29,10 +29,10 @@ export class ServersService {
 
   async fronts(): Promise<FrontServerDto[]> {
     const rows = await this.dataSource.query<FrontServerDto[]>(`
-      SELECT frontid AS frontId, fqdn, INET_NTOA(ip & 0xFFFFFFFF) AS ip, port,
-             weight, maxconnection AS maxConnection, master,
+      SELECT frontid AS frontId, fqdn, INET_NTOA(ip & 4294967295) AS ip, port,
+             weight, maxconnection AS maxConnection, \`master\`,
              startts AS startTs, endts AS endTs,
-             (COALESCE(endts, 0) = 0) AS active
+             (endts = 0) AS active
       FROM front
       ORDER BY frontid DESC
     `);
@@ -46,7 +46,7 @@ export class ServersService {
   async sipServers(): Promise<SipServerDto[]> {
     const rows = await this.dataSource.query<SipServerDto[]>(
       `
-      SELECT sipserverid AS sipServerId, name, INET_NTOA(ip & 0xFFFFFFFF) AS ip, port,
+      SELECT sipserverid AS sipServerId, name, INET_NTOA(ip & 4294967295) AS ip, port,
              maxtables AS maxTables, fqdn, lastts AS lastTs,
              (lastts > NOW() - INTERVAL ? SECOND) AS active
       FROM sipserver
