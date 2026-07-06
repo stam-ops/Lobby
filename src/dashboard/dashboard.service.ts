@@ -21,7 +21,7 @@ export class DashboardService {
     const metrics = await this.dataSource.query<{ totalPlayers: number; vipPlayers: number; onlinePlayers: number }[]>(`
       SELECT
         (SELECT COUNT(*) FROM player WHERE toremove = 0) AS totalPlayers,
-        (SELECT COUNT(*) FROM player WHERE toremove = 0 AND endvipts > NOW()) AS vipPlayers,
+        (SELECT COUNT(*) FROM player WHERE toremove = 0 AND accounttype = 1) AS vipPlayers,
         (SELECT COUNT(DISTINCT playerid) FROM playersession WHERE opened = 1 AND endts = 0) AS onlinePlayers
     `);
 

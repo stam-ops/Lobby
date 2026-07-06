@@ -1,8 +1,11 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PlayerDetailDto, PlayerListDto, PlayerRowDto } from './dto/player-row.dto';
 import { BanType } from './dto/ban.dto';
 import { BlacklistService } from './blacklist.service';
+
+/** Type de compte manipulé par le backoffice (dérivé de accounttype). */
+export type PlayerType = 'normal' | 'vip' | 'modo';
 
 /**
  * Conversion robuste vers boolean. mysql2 peut renvoyer un EXISTS/tinyint sous forme de nombre
@@ -25,13 +28,19 @@ export class PlayersService {
     private readonly blacklist: BlacklistService,
   ) {}
 
-  async list(search: string, limit: number, offset: number): Promise<PlayerListDto> {
+  async list(search: string, type: PlayerType | undefined, limit: number, offset: number): Promise<PlayerListDto> {
     const like = `%${search}%`;
     const searchId = /^\d+$/.test(search) ? Number(search) : -1;
-    const where = search
-      ? `WHERE pi.screenname LIKE ? OR pi.email LIKE ? OR p.playerid = ?`
-      : '';
-    const whereArgs = search ? [like, like, searchId] : [];
+    const conds: string[] = [];
+    const whereArgs: (string | number)[] = [];
+    if (search) {
+      conds.push('(pi.screenname LIKE ? OR pi.email LIKE ? OR p.playerid = ?)');
+      whereArgs.push(like, like, searchId);
+    }
+    if (type === 'normal') conds.push('p.accounttype = 0');
+    else if (type === 'vip') conds.push('p.accounttype = 1');
+    else if (type === 'modo') conds.push('p.accounttype >= 2');
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
     const items = await this.dataSource.query<PlayerRowDto[]>(
       `
@@ -115,6 +124,26 @@ export class PlayersService {
         }
         return;
       }
+    }
+  }
+
+  /**
+   * Change le type d'un joueur (accounttype). VIP exige une date de fin (endvipts).
+   *  - normal → accounttype 0 ; modo → accounttype 2 ; vip → accounttype 1 + endvipts.
+   */
+  async setType(playerId: number, type: PlayerType, endVipTs?: string): Promise<void> {
+    switch (type) {
+      case 'normal':
+        await this.dataSource.query('UPDATE player SET accounttype = 0 WHERE playerid = ?', [playerId]);
+        return;
+      case 'modo':
+        await this.dataSource.query('UPDATE player SET accounttype = 2 WHERE playerid = ?', [playerId]);
+        return;
+      case 'vip':
+        if (!endVipTs) throw new BadRequestException('Date de fin VIP requise');
+        await this.dataSource.query(
+          'UPDATE player SET accounttype = 1, endvipts = ? WHERE playerid = ?', [endVipTs, playerId]);
+        return;
     }
   }
 
