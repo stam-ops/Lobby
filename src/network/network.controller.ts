@@ -21,13 +21,16 @@ export class NetworkController {
   @Get('sessions')
   @ApiOperation({ summary: 'Sessions joueur (filtre actives : opened=1 & endts=0)' })
   @ApiQuery({ name: 'active', required: false, description: 'true = actives, false = inactives, absent = toutes' })
+  @ApiQuery({ name: 'playerId', required: false })
   @ApiResponse({ status: 200, type: SessionListDto })
   sessions(
     @Query('active') active: string,
+    @Query('playerId') playerId: string,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
-    return this.network.sessions(parseBool(active), Math.min(limit, 200), offset);
+    const pid = playerId ? Number(playerId) : undefined;
+    return this.network.sessions(parseBool(active), Number.isInteger(pid) ? pid : undefined, Math.min(limit, 200), offset);
   }
 
   @Get('sessions/:id')

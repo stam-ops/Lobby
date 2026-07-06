@@ -38,10 +38,18 @@ export class NetworkService {
     return r;
   }
 
-  async sessions(active: boolean | undefined, limit: number, offset: number): Promise<SessionListDto> {
-    let where = '';
-    if (active === true) where = 'WHERE ps.opened = 1 AND ps.endts = 0';
-    else if (active === false) where = 'WHERE NOT (ps.opened = 1 AND ps.endts = 0)';
+  async sessions(
+    active: boolean | undefined,
+    playerId: number | undefined,
+    limit: number,
+    offset: number,
+  ): Promise<SessionListDto> {
+    const conds: string[] = [];
+    const args: number[] = [];
+    if (active === true) conds.push('ps.opened = 1 AND ps.endts = 0');
+    else if (active === false) conds.push('NOT (ps.opened = 1 AND ps.endts = 0)');
+    if (playerId != null) { conds.push('ps.playerid = ?'); args.push(playerId); }
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
     const items = await this.dataSource.query<SessionRowDto[]>(
       `SELECT ${this.SESSION_COLS}
@@ -50,10 +58,11 @@ export class NetworkService {
        ${where}
        ORDER BY ps.playersessionid DESC
        LIMIT ? OFFSET ?`,
-      [limit, offset],
+      [...args, limit, offset],
     );
     const totalRow = await this.dataSource.query<{ total: number }[]>(
       `SELECT COUNT(*) AS total FROM playersession ps ${where}`,
+      args,
     );
     items.forEach((r) => this.normSession(r));
     return { items, total: totalRow[0]?.total ?? 0 };

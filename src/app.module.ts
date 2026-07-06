@@ -15,6 +15,7 @@ import { NetworkModule } from './network/network.module';
 import { TablesModule } from './tables/tables.module';
 import { CatalogModule } from './catalog/catalog.module';
 import { OpinionsModule } from './opinions/opinions.module';
+import { DashboardModule } from './dashboard/dashboard.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebrtcModule } from './webrtc/webrtc.module';
 import { GametableEntity } from './lobby/entities/gametable.entity';
@@ -59,6 +60,7 @@ import { BackofficeUserEntity } from './auth/entities/backoffice-user.entity';
     TablesModule,
     CatalogModule,
     OpinionsModule,
+    DashboardModule,
     WebhooksModule,
     WebrtcModule,
   ],
