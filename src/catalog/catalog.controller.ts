@@ -1,10 +1,17 @@
 import { Controller, DefaultValuePipe, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { CatalogService } from './catalog.service';
 import {
-  ArchetypeDetailDto, ArchetypeRowDto, TournamentDetailDto, TournamentListDto,
+  ArchetypeDetailDto, ArchetypeRowDto, TournamentArchetypeRowDto,
+  TournamentDetailDto, TournamentListDto,
 } from './dto/catalog.dto';
 import { Auth } from '../auth/auth.decorator';
+
+const parseIntOpt = (v?: string): number | undefined => {
+  if (v === undefined || v === '') return undefined;
+  const n = Number(v);
+  return Number.isInteger(n) ? n : undefined;
+};
 
 @ApiTags('Catalog (backoffice)')
 @Auth('admin')
@@ -27,14 +34,23 @@ export class CatalogController {
     return this.catalog.archetype(id);
   }
 
+  @Get('tournament-archetypes')
+  @ApiOperation({ summary: 'Liste des archetypes de tournoi' })
+  @ApiResponse({ status: 200, type: [TournamentArchetypeRowDto] })
+  tournamentArchetypes() {
+    return this.catalog.tournamentArchetypes();
+  }
+
   @Get('tournaments')
-  @ApiOperation({ summary: 'Liste des tournois' })
+  @ApiOperation({ summary: 'Liste des tournois (filtre archetypeId)' })
+  @ApiQuery({ name: 'archetypeId', required: false })
   @ApiResponse({ status: 200, type: TournamentListDto })
   tournaments(
+    @Query('archetypeId') archetypeId: string,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
-    return this.catalog.tournaments(Math.min(limit, 200), offset);
+    return this.catalog.tournaments(parseIntOpt(archetypeId), Math.min(limit, 200), offset);
   }
 
   @Get('tournaments/:id')

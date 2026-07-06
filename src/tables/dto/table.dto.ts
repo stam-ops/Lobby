@@ -7,6 +7,7 @@ export class TableRowDto {
   @ApiProperty({ description: 'campok.client.codes.gametable.LaunchState' }) launchState: number;
   @ApiProperty({ description: 'campok.client.codes.gametable.GameState' }) gameState: number;
   @ApiProperty() playersCount: number;
+  @ApiProperty({ description: 'TableType : 0=cashgame, 1=SNG, 2=table tournoi' }) tableType: number;
   @ApiProperty({ nullable: true }) gameTableArchetypeId: number;
   @ApiProperty({ nullable: true, description: 'ArchetypeType : 1=CamDate,2=CamBlitz,3=CashGame,4=CashGame privée' })
   archetypeType: number;

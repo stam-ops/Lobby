@@ -20,16 +20,21 @@ export class TablesController {
   @Get()
   @ApiOperation({ summary: 'Liste des tables (filtres type / launchstate / gamestate)' })
   @ApiQuery({ name: 'type', required: false, enum: ['camdate', 'camblitz', 'cashgame', 'private', 'tournament'] })
+  @ApiQuery({ name: 'archetypeId', required: false })
   @ApiQuery({ name: 'launchState', required: false })
   @ApiQuery({ name: 'gameState', required: false })
   @ApiResponse({ status: 200, type: TableListDto })
   list(
     @Query('type') type: TableTypeFilter,
+    @Query('archetypeId') archetypeId: string,
     @Query('launchState') launchState: string,
     @Query('gameState') gameState: string,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
-    return this.tables.list(type, parseIntOpt(launchState), parseIntOpt(gameState), Math.min(limit, 200), offset);
+    return this.tables.list(
+      type, parseIntOpt(archetypeId), parseIntOpt(launchState), parseIntOpt(gameState),
+      Math.min(limit, 200), offset,
+    );
   }
 }

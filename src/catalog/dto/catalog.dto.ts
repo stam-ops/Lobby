@@ -23,6 +23,18 @@ export class ArchetypeDetailDto extends ArchetypeRowDto {
   @ApiProperty({ nullable: true }) clientId: number;
 }
 
+export class TournamentArchetypeRowDto {
+  @ApiProperty() id: number;
+  @ApiProperty({ nullable: true }) label: string;
+  @ApiProperty({ nullable: true, description: 'TournamentArchetypeType (0=classic,1=ladies,2=vip,3=levelMin)' }) type: number;
+  @ApiProperty() buyIn: number;
+  @ApiProperty() maxPlayers: number;
+  @ApiProperty() tableSize: number;
+  @ApiProperty() structureType: number;
+  @ApiProperty() hasVideo: number;
+  @ApiProperty() isValid: number;
+}
+
 export class TournamentRowDto {
   @ApiProperty() id: number;
   @ApiProperty({ nullable: true }) label: string;
