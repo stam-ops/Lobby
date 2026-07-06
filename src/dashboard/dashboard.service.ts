@@ -1,6 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { DashboardDto, DayCountDto } from './dto/dashboard.dto';
+import { DashboardDto, DayCountDto, MonthCountDto } from './dto/dashboard.dto';
 
 /**
  * Métriques du tableau de bord.
@@ -49,5 +49,17 @@ export class DashboardService {
       activePerDay: num(activePerDay),
       newPerDay: num(newPerDay),
     };
+  }
+
+  /** Monthly Active Users : joueurs distincts avec une session par mois, sur `months` mois. */
+  async mau(months: number): Promise<MonthCountDto[]> {
+    const span = months - 1; // validé côté contrôleur (6/12/24) → inline sûr
+    const rows = await this.dataSource.query<MonthCountDto[]>(`
+      SELECT DATE_FORMAT(startts, '%Y-%m') AS month, COUNT(DISTINCT playerid) AS count
+      FROM playersession
+      WHERE startts >= DATE_SUB(DATE_FORMAT(CURDATE(), '%Y-%m-01'), INTERVAL ${span} MONTH)
+      GROUP BY month ORDER BY month
+    `);
+    return rows.map((r) => ({ month: r.month, count: Number(r.count) }));
   }
 }

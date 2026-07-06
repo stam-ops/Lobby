@@ -5,6 +5,11 @@ export class DayCountDto {
   @ApiProperty() count: number;
 }
 
+export class MonthCountDto {
+  @ApiProperty({ example: '2026-07' }) month: string;
+  @ApiProperty() count: number;
+}
+
 export class DashboardDto {
   @ApiProperty() totalPlayers: number;
   @ApiProperty() vipPlayers: number;
