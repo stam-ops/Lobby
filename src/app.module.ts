@@ -12,6 +12,8 @@ import { AuthModule } from './auth/auth.module';
 import { PlayersModule } from './players/players.module';
 import { ServersModule } from './servers/servers.module';
 import { NetworkModule } from './network/network.module';
+import { TablesModule } from './tables/tables.module';
+import { CatalogModule } from './catalog/catalog.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebrtcModule } from './webrtc/webrtc.module';
 import { GametableEntity } from './lobby/entities/gametable.entity';
@@ -53,6 +55,8 @@ import { BackofficeUserEntity } from './auth/entities/backoffice-user.entity';
     PlayersModule,
     ServersModule,
     NetworkModule,
+    TablesModule,
+    CatalogModule,
     WebhooksModule,
     WebrtcModule,
   ],
