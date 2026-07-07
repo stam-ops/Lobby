@@ -71,4 +71,12 @@ export class TablesService {
 
     return { items, total: totalRow[0]?.total ?? 0 };
   }
+
+  /** Clôture une table : launchstate = closed (3), gamestate = ended (3). */
+  async close(gameTableId: number): Promise<void> {
+    await this.dataSource.query(
+      'UPDATE gametable SET launchstate = 3, gamestate = 3 WHERE gametableid = ?',
+      [gameTableId],
+    );
+  }
 }

@@ -1,8 +1,8 @@
-import { Controller, DefaultValuePipe, Get, ParseIntPipe, Query } from '@nestjs/common';
+import { Controller, DefaultValuePipe, Get, Param, ParseIntPipe, Patch, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { TablesService, TableTypeFilter } from './tables.service';
 import { TableListDto } from './dto/table.dto';
-import { Auth } from '../auth/auth.decorator';
+import { Auth, Roles } from '../auth/auth.decorator';
 
 const parseIntOpt = (v?: string): number | undefined => {
   if (v === undefined || v === '') return undefined;
@@ -39,5 +39,13 @@ export class TablesController {
       parseIntOpt(launchState), parseIntOpt(gameState),
       Math.min(limit, 200), offset,
     );
+  }
+
+  @Patch(':id/close')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Clôturer une table (launchstate = 3, gamestate = 3)' })
+  async close(@Param('id', ParseIntPipe) id: number) {
+    await this.tables.close(id);
+    return { ok: true };
   }
 }
