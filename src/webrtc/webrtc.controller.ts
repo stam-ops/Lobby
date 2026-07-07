@@ -1,6 +1,8 @@
 import { Controller, Get } from '@nestjs/common';
+import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
+import { Auth } from '../auth/auth.decorator';
 
 /**
  * Fournit les `iceServers` (STUN + TURN) au client juste avant un appel WebRTC (cam 2 joueurs).
@@ -11,6 +13,9 @@ import * as crypto from 'crypto';
  * Route authentifiée (guard global @Auth('player')) → seuls les joueurs connectés obtiennent des creds
  * de relais → limite l'abus de bande passante. Si TURN non configuré, on renvoie STUN seul.
  */
+@ApiTags('WebRTC')
+@ApiBearerAuth()
+@Auth('player', 'admin')
 @Controller('webrtc')
 export class WebrtcController {
   constructor(private readonly config: ConfigService) {}
