@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PlayerDetailDto, PlayerListDto, PlayerRowDto } from './dto/player-row.dto';
+import { DayCountDto } from './dto/day-count.dto';
 import { BanType } from './dto/ban.dto';
 import { BlacklistService } from './blacklist.service';
 
@@ -125,6 +126,20 @@ export class PlayersService {
         return;
       }
     }
+  }
+
+  /** Nombre de connexions par jour d'un joueur (via ses sessions), sur `days` jours. */
+  async connectionsPerDay(playerId: number, days: number): Promise<DayCountDto[]> {
+    const span = days - 1; // validé côté contrôleur (7/30/90) → inline sûr
+    const rows = await this.dataSource.query<DayCountDto[]>(
+      `SELECT DATE_FORMAT(c.startts, '%Y-%m-%d') AS day, COUNT(*) AS count
+       FROM connection c
+       JOIN playersession ps ON ps.playersessionid = c.playersessionid
+       WHERE ps.playerid = ? AND c.startts >= CURDATE() - INTERVAL ${span} DAY
+       GROUP BY day ORDER BY day`,
+      [playerId],
+    );
+    return rows.map((r) => ({ day: r.day, count: Number(r.count) }));
   }
 
   /**

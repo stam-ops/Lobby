@@ -4,6 +4,7 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { PlayersService, PlayerType } from './players.service';
 import { PlayerDetailDto, PlayerListDto } from './dto/player-row.dto';
+import { DayCountDto } from './dto/day-count.dto';
 import { BanDto, BanType } from './dto/ban.dto';
 import { SetTypeDto } from './dto/set-type.dto';
 import { Auth, Roles } from '../auth/auth.decorator';
@@ -48,6 +49,16 @@ export class PlayersController {
   @ApiResponse({ status: 404, description: 'Joueur introuvable' })
   detail(@Param('id', ParseIntPipe) id: number) {
     return this.players.detail(id);
+  }
+
+  @Get(':id/connections-per-day')
+  @ApiOperation({ summary: 'Nombre de connexions par jour du joueur (7/30/90 j)' })
+  @ApiQuery({ name: 'days', required: false, enum: [7, 30, 90] })
+  @ApiResponse({ status: 200, type: [DayCountDto] })
+  connectionsPerDay(@Param('id', ParseIntPipe) id: number, @Query('days') daysStr: string) {
+    const d = Number(daysStr);
+    const days = [7, 30, 90].includes(d) ? d : 30;
+    return this.players.connectionsPerDay(id, days);
   }
 
   @Post(':id/ban')

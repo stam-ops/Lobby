@@ -37,15 +37,19 @@ export class WebrtcController {
       const expiry = Math.floor(Date.now() / 1000) + ttl;
       const username = `${expiry}:campok`;
       const credential = crypto.createHmac('sha1', secret).update(username).digest('base64');
-      iceServers.push({
-        urls: [
-          `turn:${host}:3478?transport=udp`,
-          `turn:${host}:3478?transport=tcp`,
-          `turns:${host}:5349?transport=tcp`,
-        ],
-        username,
-        credential,
-      });
+      // Base : TURN en clair (UDP + TCP). Le média WebRTC est déjà chiffré (DTLS-SRTP) → pas besoin de
+      // TLS pour la confidentialité. `turns:` (TLS) ne sert qu'à traverser les firewalls très stricts ;
+      // on ne l'ajoute QUE si un port TLS est configuré (TURN_TLS_PORT), sinon le client tenterait une
+      // URL sans listener → gathering ICE ralenti pour rien.
+      const urls = [
+        `turn:${host}:3478?transport=udp`,
+        `turn:${host}:3478?transport=tcp`,
+      ];
+      const tlsPort = this.config.get<string>('TURN_TLS_PORT');
+      if (tlsPort) {
+        urls.push(`turns:${host}:${tlsPort}?transport=tcp`);
+      }
+      iceServers.push({ urls, username, credential });
     }
 
     return { iceServers };
