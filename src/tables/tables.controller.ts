@@ -22,6 +22,7 @@ export class TablesController {
   @ApiQuery({ name: 'type', required: false, enum: ['camdate', 'camblitz', 'cashgame', 'private', 'tournament'] })
   @ApiQuery({ name: 'archetypeId', required: false })
   @ApiQuery({ name: 'tournamentId', required: false })
+  @ApiQuery({ name: 'excludeTournament', required: false, description: 'true = exclut les tables de tournoi' })
   @ApiQuery({ name: 'launchState', required: false })
   @ApiQuery({ name: 'gameState', required: false })
   @ApiResponse({ status: 200, type: TableListDto })
@@ -29,13 +30,14 @@ export class TablesController {
     @Query('type') type: TableTypeFilter,
     @Query('archetypeId') archetypeId: string,
     @Query('tournamentId') tournamentId: string,
+    @Query('excludeTournament') excludeTournament: string,
     @Query('launchState') launchState: string,
     @Query('gameState') gameState: string,
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
     return this.tables.list(
-      type, parseIntOpt(archetypeId), parseIntOpt(tournamentId),
+      type, parseIntOpt(archetypeId), parseIntOpt(tournamentId), excludeTournament === 'true',
       parseIntOpt(launchState), parseIntOpt(gameState),
       Math.min(limit, 200), offset,
     );

@@ -29,6 +29,7 @@ export class TablesService {
     type: TableTypeFilter | undefined,
     archetypeId: number | undefined,
     tournamentId: number | undefined,
+    excludeTournament: boolean,
     launchState: number | undefined,
     gameState: number | undefined,
     limit: number,
@@ -39,6 +40,7 @@ export class TablesService {
     if (type && this.TYPE_COND[type]) conds.push(`(${this.TYPE_COND[type]})`);
     if (archetypeId != null) { conds.push('gt.gametablearchetypeid = ?'); args.push(archetypeId); }
     if (tournamentId != null) { conds.push('gt.tournamentid = ?'); args.push(tournamentId); }
+    if (excludeTournament) conds.push('COALESCE(gt.tournamentid, 0) = 0');
     if (launchState != null) { conds.push('gt.launchstate = ?'); args.push(launchState); }
     if (gameState != null) { conds.push('gt.gamestate = ?'); args.push(gameState); }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
