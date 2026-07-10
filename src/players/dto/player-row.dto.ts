@@ -33,6 +33,9 @@ export class PlayerDetailDto extends PlayerRowDto {
   @ApiProperty({ nullable: true }) lastOpinion: string;
   @ApiProperty({ description: 'Notifications générales activées (0/1)' }) notifGeneral: number;
   @ApiProperty({ description: 'Notifications perso activées (0/1)' }) notifPerso: number;
+  @ApiProperty({ nullable: true, description: 'Solde jetons (playeraccount.amount)' }) amount: number;
+  @ApiProperty({ nullable: true, description: 'Solde bonus (playeraccount.amountbonus)' }) amountBonus: number;
+  @ApiProperty({ nullable: true, description: "Crédits Cam's (playeraccount.cams)" }) cams: number;
   @ApiProperty() chatBanned: boolean;
   @ApiProperty() camBanned: boolean;
 }

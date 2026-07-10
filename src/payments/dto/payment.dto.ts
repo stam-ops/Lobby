@@ -11,6 +11,8 @@ export class PaymentRowDto {
   @ApiProperty() orderId: string;
   @ApiProperty() subKey: string;
   @ApiProperty({ description: 'Paiement validé' }) validated: boolean;
+  @ApiProperty({ nullable: true, description: 'Prix en centimes (offer.pricecents)' }) priceCents: number;
+  @ApiProperty({ nullable: true }) currency: string;
 }
 
 export class PaymentListDto {
@@ -29,6 +31,8 @@ export class SubscriptionRowDto {
   @ApiProperty() status: string;
   @ApiProperty({ nullable: true }) createdTs: string;
   @ApiProperty({ nullable: true }) updatedTs: string;
+  @ApiProperty({ nullable: true, description: 'Prix en centimes (offer.pricecents)' }) priceCents: number;
+  @ApiProperty({ nullable: true }) currency: string;
 }
 
 export class SubscriptionListDto {

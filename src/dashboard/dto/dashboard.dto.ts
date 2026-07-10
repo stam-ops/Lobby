@@ -14,6 +14,7 @@ export class DashboardDto {
   @ApiProperty() totalPlayers: number;
   @ApiProperty() vipPlayers: number;
   @ApiProperty() onlinePlayers: number;
+  @ApiProperty({ description: 'Montant validé du mois en cours (centimes)' }) monthRevenueCents: number;
   @ApiProperty({ type: [DayCountDto] }) activePerDay: DayCountDto[];
   @ApiProperty({ type: [DayCountDto] }) newPerDay: DayCountDto[];
 }

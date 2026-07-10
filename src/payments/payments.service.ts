@@ -21,7 +21,9 @@ export class PaymentsService {
       `SELECT pp.paymentpokerid AS paymentPokerId, pp.ts AS ts, pp.playerid AS playerId,
               pi.screenname AS screenName, pp.platform, pp.productid AS productId,
               pp.producttype AS productType, pp.orderid AS orderId, pp.subkey AS subKey,
-              pp.validated AS validated
+              pp.validated AS validated,
+              (SELECT o.pricecents FROM offer o WHERE o.productid = pp.productid AND o.producttype = pp.producttype LIMIT 1) AS priceCents,
+              (SELECT o.currency   FROM offer o WHERE o.productid = pp.productid AND o.producttype = pp.producttype LIMIT 1) AS currency
        FROM paymentpoker pp
        LEFT JOIN playerinfos pi ON pi.playerid = pp.playerid
        ${where}
@@ -33,7 +35,10 @@ export class PaymentsService {
       `SELECT COUNT(*) AS total FROM paymentpoker pp LEFT JOIN playerinfos pi ON pi.playerid = pp.playerid ${where}`,
       args,
     );
-    items.forEach((r) => { r.validated = toBool(r.validated); });
+    items.forEach((r) => {
+      r.validated = toBool(r.validated);
+      r.priceCents = r.priceCents == null ? null : Number(r.priceCents);
+    });
     return { items, total: totalRow[0]?.total ?? 0 };
   }
 
@@ -48,7 +53,9 @@ export class PaymentsService {
     const items = await this.dataSource.query<SubscriptionRowDto[]>(
       `SELECT ps.playersubscriptionid AS playerSubscriptionId, ps.playerid AS playerId,
               pi.screenname AS screenName, ps.platform, ps.productid AS productId, ps.subkey AS subKey,
-              ps.expiryts AS expiryTs, ps.status, ps.createdts AS createdTs, ps.updatedts AS updatedTs
+              ps.expiryts AS expiryTs, ps.status, ps.createdts AS createdTs, ps.updatedts AS updatedTs,
+              (SELECT o.pricecents FROM offer o WHERE o.productid = ps.productid LIMIT 1) AS priceCents,
+              (SELECT o.currency   FROM offer o WHERE o.productid = ps.productid LIMIT 1) AS currency
        FROM playersubscription ps
        LEFT JOIN playerinfos pi ON pi.playerid = ps.playerid
        ${where}
@@ -60,7 +67,10 @@ export class PaymentsService {
       `SELECT COUNT(*) AS total FROM playersubscription ps LEFT JOIN playerinfos pi ON pi.playerid = ps.playerid ${where}`,
       args,
     );
-    items.forEach((r) => { r.expiryTs = Number(r.expiryTs); });
+    items.forEach((r) => {
+      r.expiryTs = Number(r.expiryTs);
+      r.priceCents = r.priceCents == null ? null : Number(r.priceCents);
+    });
     return { items, total: totalRow[0]?.total ?? 0 };
   }
 }

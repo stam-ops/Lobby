@@ -18,11 +18,18 @@ export class DashboardService {
     // `days` est validé (7/30/90) côté contrôleur → inline sûr (entier).
     const span = days - 1;
 
-    const metrics = await this.dataSource.query<{ totalPlayers: number; vipPlayers: number; onlinePlayers: number }[]>(`
+    const metrics = await this.dataSource.query<
+      { totalPlayers: number; vipPlayers: number; onlinePlayers: number; monthRevenueCents: number }[]
+    >(`
       SELECT
         (SELECT COUNT(*) FROM player WHERE toremove = 0) AS totalPlayers,
         (SELECT COUNT(*) FROM player WHERE toremove = 0 AND accounttype = 1) AS vipPlayers,
-        (SELECT COUNT(DISTINCT playerid) FROM playersession WHERE opened = 1 AND endts = 0) AS onlinePlayers
+        (SELECT COUNT(DISTINCT playerid) FROM playersession WHERE opened = 1 AND endts = 0) AS onlinePlayers,
+        (SELECT COALESCE(SUM(
+           (SELECT o.pricecents FROM offer o WHERE o.productid = pp.productid AND o.producttype = pp.producttype LIMIT 1)
+         ), 0)
+         FROM paymentpoker pp
+         WHERE pp.validated = 1 AND pp.ts >= DATE_FORMAT(CURDATE(), '%Y-%m-01')) AS monthRevenueCents
     `);
 
     const activePerDay = await this.dataSource.query<DayCountDto[]>(`
@@ -39,13 +46,14 @@ export class DashboardService {
       GROUP BY day ORDER BY day
     `);
 
-    const m = metrics[0] ?? { totalPlayers: 0, vipPlayers: 0, onlinePlayers: 0 };
+    const m = metrics[0] ?? { totalPlayers: 0, vipPlayers: 0, onlinePlayers: 0, monthRevenueCents: 0 };
     const num = (rows: DayCountDto[]) => rows.map((r) => ({ day: r.day, count: Number(r.count) }));
 
     return {
       totalPlayers: Number(m.totalPlayers),
       vipPlayers: Number(m.vipPlayers),
       onlinePlayers: Number(m.onlinePlayers),
+      monthRevenueCents: Number(m.monthRevenueCents),
       activePerDay: num(activePerDay),
       newPerDay: num(newPerDay),
     };
