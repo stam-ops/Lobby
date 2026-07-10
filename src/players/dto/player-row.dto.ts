@@ -8,6 +8,8 @@ export class PlayerRowDto {
   @ApiProperty({ nullable: true }) creationTs: string;
   @ApiProperty({ nullable: true, description: 'Fin d\'abonnement VIP' }) endVipTs: string;
   @ApiProperty({ description: 'Compte marqué pour suppression' }) toRemove: boolean;
+  @ApiProperty({ description: 'Solde total (amount + amountbonus)' }) solde: number;
+  @ApiProperty({ description: "Crédits Cam's" }) cams: number;
   @ApiProperty({ description: 'Banni du site (table blacklist)' }) siteBanned: boolean;
 }
 

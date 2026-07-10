@@ -22,17 +22,23 @@ export class PlayersController {
   @ApiOperation({ summary: 'Liste des joueurs (recherche + pagination) avec statut de ban' })
   @ApiQuery({ name: 'search', required: false, description: 'screenname, email ou playerId' })
   @ApiQuery({ name: 'type', required: false, enum: ['normal', 'vip', 'modo'] })
+  @ApiQuery({ name: 'sortBy', required: false, enum: ['solde', 'cams'] })
+  @ApiQuery({ name: 'sortDir', required: false, enum: ['asc', 'desc'] })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'offset', required: false })
   @ApiResponse({ status: 200, type: PlayerListDto })
   list(
     @Query('search', new DefaultValuePipe('')) search: string,
     @Query('type') type: PlayerType,
+    @Query('sortBy') sortBy: 'solde' | 'cams',
+    @Query('sortDir') sortDir: 'asc' | 'desc',
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
     const t = ['normal', 'vip', 'modo'].includes(type) ? type : undefined;
-    return this.players.list(search.trim(), t, Math.min(limit, 200), offset);
+    const sb = ['solde', 'cams'].includes(sortBy) ? sortBy : undefined;
+    const sd = sortDir === 'asc' ? 'asc' : 'desc';
+    return this.players.list(search.trim(), t, sb, sd, Math.min(limit, 200), offset);
   }
 
   @Patch(':id/type')

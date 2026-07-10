@@ -29,7 +29,14 @@ export class PlayersService {
     private readonly blacklist: BlacklistService,
   ) {}
 
-  async list(search: string, type: PlayerType | undefined, limit: number, offset: number): Promise<PlayerListDto> {
+  async list(
+    search: string,
+    type: PlayerType | undefined,
+    sortBy: 'solde' | 'cams' | undefined,
+    sortDir: 'asc' | 'desc',
+    limit: number,
+    offset: number,
+  ): Promise<PlayerListDto> {
     const like = `%${search}%`;
     const searchId = /^\d+$/.test(search) ? Number(search) : -1;
     const conds: string[] = [];
@@ -43,15 +50,23 @@ export class PlayersService {
     else if (type === 'modo') conds.push('p.accounttype >= 2');
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
+    // ORDER BY sécurisé (whitelist) : défaut = plus récents.
+    const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
+    let orderBy = 'p.playerid DESC';
+    if (sortBy === 'solde') orderBy = `(COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) ${dir}`;
+    else if (sortBy === 'cams') orderBy = `COALESCE(pa.cams, 0) ${dir}`;
+
     const items = await this.dataSource.query<PlayerRowDto[]>(
       `
       SELECT p.playerid AS playerId, pi.screenname AS screenName, p.accounttype AS accountType,
              p.creationts AS creationTs, p.endvipts AS endVipTs, p.toremove AS toRemove,
+             (COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) AS solde, COALESCE(pa.cams, 0) AS cams,
              EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid) AS siteBanned
       FROM player p
       JOIN playerinfos pi ON pi.playerid = p.playerid
+      LEFT JOIN playeraccount pa ON pa.playerid = p.playerid
       ${where}
-      ORDER BY p.playerid DESC
+      ORDER BY ${orderBy}
       LIMIT ? OFFSET ?
       `,
       [...whereArgs, limit, offset],
@@ -66,6 +81,8 @@ export class PlayersService {
     for (const it of items) {
       it.siteBanned = toBool(it.siteBanned);
       it.toRemove = toBool(it.toRemove);
+      it.solde = Number(it.solde);
+      it.cams = Number(it.cams);
     }
 
     return { items, total: totalRow[0]?.total ?? 0 };
