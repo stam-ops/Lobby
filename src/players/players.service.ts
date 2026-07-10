@@ -99,7 +99,7 @@ export class PlayersService {
              pi.tokenfb AS tokenFb, pi.tokenios AS tokenIos,
              pi.lastrate AS lastRate, pi.lastopinion AS lastOpinion,
              pi.notifgeneral AS notifGeneral, pi.notifperso AS notifPerso,
-             pa.amount AS amount, pa.amountbonus AS amountBonus, pa.cams AS cams,
+             pa.amount AS amount, pa.amountbonus AS amountBonus, COALESCE(pa.cams, 0) AS cams,
              EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid)                                        AS siteBanned,
              EXISTS(SELECT 1 FROM bannedplayer bp WHERE bp.playerid = p.playerid AND (bp.endts = 0 OR bp.endts IS NULL)) AS chatBanned,
              EXISTS(SELECT 1 FROM bannedcamall bc WHERE bc.playerid = p.playerid AND (bc.endts = 0 OR bc.endts IS NULL)) AS camBanned
