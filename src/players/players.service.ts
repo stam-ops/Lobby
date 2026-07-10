@@ -32,7 +32,8 @@ export class PlayersService {
   async list(
     search: string,
     type: PlayerType | undefined,
-    sortBy: 'solde' | 'cams' | undefined,
+    removed: 'active' | 'removed' | undefined,
+    sortBy: 'creation' | 'solde' | 'cams' | undefined,
     sortDir: 'asc' | 'desc',
     limit: number,
     offset: number,
@@ -48,12 +49,15 @@ export class PlayersService {
     if (type === 'normal') conds.push('p.accounttype = 0');
     else if (type === 'vip') conds.push('p.accounttype = 1');
     else if (type === 'modo') conds.push('p.accounttype >= 2');
+    if (removed === 'active') conds.push('p.toremove = 0');
+    else if (removed === 'removed') conds.push('p.toremove = 1');
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
     // ORDER BY sécurisé (whitelist) : défaut = plus récents.
     const dir = sortDir === 'asc' ? 'ASC' : 'DESC';
     let orderBy = 'p.playerid DESC';
-    if (sortBy === 'solde') orderBy = `(COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) ${dir}`;
+    if (sortBy === 'creation') orderBy = `p.creationts ${dir}`;
+    else if (sortBy === 'solde') orderBy = `(COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) ${dir}`;
     else if (sortBy === 'cams') orderBy = `COALESCE(pa.cams, 0) ${dir}`;
 
     const items = await this.dataSource.query<PlayerRowDto[]>(

@@ -22,7 +22,8 @@ export class PlayersController {
   @ApiOperation({ summary: 'Liste des joueurs (recherche + pagination) avec statut de ban' })
   @ApiQuery({ name: 'search', required: false, description: 'screenname, email ou playerId' })
   @ApiQuery({ name: 'type', required: false, enum: ['normal', 'vip', 'modo'] })
-  @ApiQuery({ name: 'sortBy', required: false, enum: ['solde', 'cams'] })
+  @ApiQuery({ name: 'removed', required: false, enum: ['active', 'removed'] })
+  @ApiQuery({ name: 'sortBy', required: false, enum: ['creation', 'solde', 'cams'] })
   @ApiQuery({ name: 'sortDir', required: false, enum: ['asc', 'desc'] })
   @ApiQuery({ name: 'limit', required: false })
   @ApiQuery({ name: 'offset', required: false })
@@ -30,15 +31,17 @@ export class PlayersController {
   list(
     @Query('search', new DefaultValuePipe('')) search: string,
     @Query('type') type: PlayerType,
-    @Query('sortBy') sortBy: 'solde' | 'cams',
+    @Query('removed') removed: 'active' | 'removed',
+    @Query('sortBy') sortBy: 'creation' | 'solde' | 'cams',
     @Query('sortDir') sortDir: 'asc' | 'desc',
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
     @Query('offset', new DefaultValuePipe(0), ParseIntPipe) offset: number,
   ) {
     const t = ['normal', 'vip', 'modo'].includes(type) ? type : undefined;
-    const sb = ['solde', 'cams'].includes(sortBy) ? sortBy : undefined;
+    const rm = ['active', 'removed'].includes(removed) ? removed : undefined;
+    const sb = ['creation', 'solde', 'cams'].includes(sortBy) ? sortBy : undefined;
     const sd = sortDir === 'asc' ? 'asc' : 'desc';
-    return this.players.list(search.trim(), t, sb, sd, Math.min(limit, 200), offset);
+    return this.players.list(search.trim(), t, rm, sb, sd, Math.min(limit, 200), offset);
   }
 
   @Patch(':id/type')
