@@ -42,6 +42,10 @@ export class WebhooksService {
     const type: number = sub.notificationType;
     const eventTimeMillis: string = String(rtdn?.eventTimeMillis ?? Date.now());
 
+    // Trace d'entrée : loggue CHAQUE RTDN reçu (tous types) pour pouvoir vérifier que le push Pub/Sub
+    // arrive bien jusqu'ici — sinon les types sans log (3 CANCELED, 4/7, 5/6) sont invisibles.
+    this.logger.log(`RTDN reçu type=${type} product=${productId} token=${String(purchaseToken).slice(0, 16)}…`);
+
     const row = await this.findPlayer('android', purchaseToken);
     if (!row) {
       this.logger.warn(`RTDN: abonnement inconnu (token non mappé) product=${productId} type=${type}`);
@@ -75,6 +79,7 @@ export class WebhooksService {
     } else if (type === 3) {
       // Annulation (auto-renew off) : le VIP reste jusqu'à l'expiration → on note juste le statut.
       await this.updateSub('android', purchaseToken, null, 'canceled');
+      this.logger.log(`RTDN annulation (auto-renew off) player=${row.playerid} — VIP conservé jusqu'à expiration`);
     } else if (type === 5 || type === 6) {
       await this.updateSub('android', purchaseToken, null, 'grace');
     }
