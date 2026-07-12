@@ -35,16 +35,23 @@ export class WebhooksService {
       this.logger.warn('RTDN: payload illisible');
       return;
     }
+    // Trace d'entrée TOUT EN HAUT : fire pour n'importe quel RTDN reçu (y compris la « notification de
+    // test » du bouton Play Console et les notifs hors-abonnement) → confirme que le push Pub/Sub atteint
+    // bien le webhook, sans avoir à faire un vrai achat.
+    const kind = rtdn?.subscriptionNotification
+      ? `subscription(type=${rtdn.subscriptionNotification.notificationType})`
+      : rtdn?.testNotification ? 'TEST (bouton Play Console)'
+      : rtdn?.voidedPurchaseNotification ? 'voidedPurchase'
+      : rtdn?.oneTimeProductNotification ? 'oneTimeProduct'
+      : 'inconnu';
+    this.logger.log(`RTDN reçu (${kind}) — le push Pub/Sub atteint bien le webhook`);
+
     const sub = rtdn?.subscriptionNotification;
     if (!sub) return; // on ne traite que les abonnements (les packs consommables n'ont pas de cycle)
     const purchaseToken: string = sub.purchaseToken;
     const productId: string = sub.subscriptionId;
     const type: number = sub.notificationType;
     const eventTimeMillis: string = String(rtdn?.eventTimeMillis ?? Date.now());
-
-    // Trace d'entrée : loggue CHAQUE RTDN reçu (tous types) pour pouvoir vérifier que le push Pub/Sub
-    // arrive bien jusqu'ici — sinon les types sans log (3 CANCELED, 4/7, 5/6) sont invisibles.
-    this.logger.log(`RTDN reçu type=${type} product=${productId} token=${String(purchaseToken).slice(0, 16)}…`);
 
     const row = await this.findPlayer('android', purchaseToken);
     if (!row) {
