@@ -17,6 +17,7 @@ import { CatalogModule } from './catalog/catalog.module';
 import { OpinionsModule } from './opinions/opinions.module';
 import { DashboardModule } from './dashboard/dashboard.module';
 import { PaymentsModule } from './payments/payments.module';
+import { GamePlayersModule } from './gameplayers/gameplayers.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebrtcModule } from './webrtc/webrtc.module';
 import { GametableEntity } from './lobby/entities/gametable.entity';
@@ -63,6 +64,7 @@ import { BackofficeUserEntity } from './auth/entities/backoffice-user.entity';
     OpinionsModule,
     DashboardModule,
     PaymentsModule,
+    GamePlayersModule,
     WebhooksModule,
     WebrtcModule,
   ],
