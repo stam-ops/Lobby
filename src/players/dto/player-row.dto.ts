@@ -29,6 +29,7 @@ export class PlayerDetailDto extends PlayerRowDto {
   @ApiProperty({ nullable: true }) fbUid: string;
   @ApiProperty({ description: 'Plateforme (code brut)' }) os: number;
   @ApiProperty({ description: 'langid : 2=français, sinon anglais' }) langId: number;
+  @ApiProperty({ nullable: true, description: 'Version de l\'app rapportée par le client' }) appVersion: number;
   @ApiProperty({ nullable: true, description: 'Token push FCM' }) tokenFb: string;
   @ApiProperty({ nullable: true, description: 'Token push iOS/APNs' }) tokenIos: string;
   @ApiProperty({ nullable: true }) lastRate: string;

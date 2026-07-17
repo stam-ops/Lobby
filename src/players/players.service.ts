@@ -99,7 +99,7 @@ export class PlayersService {
              p.creationts AS creationTs, p.endvipts AS endVipTs, p.toremove AS toRemove,
              pi.email AS email, pi.firstname AS firstName, pi.lastname AS lastName,
              pi.sex AS sex, pi.birthdate AS birthdate, pi.signinmethod AS signInMethod,
-             pi.fbuid AS fbUid, pi.os AS os, pi.langid AS langId,
+             pi.fbuid AS fbUid, pi.os AS os, pi.langid AS langId, pi.appversion AS appVersion,
              pi.tokenfb AS tokenFb, pi.tokenios AS tokenIos,
              pi.lastrate AS lastRate, pi.lastopinion AS lastOpinion,
              pi.notifgeneral AS notifGeneral, pi.notifperso AS notifPerso,
