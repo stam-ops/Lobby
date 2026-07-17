@@ -31,8 +31,11 @@ export class ClientVersionController {
 
   @Patch()
   @Roles('admin')
-  @ApiOperation({ summary: 'Définir la version minimum requise d\'une plateforme (os: 0=Android, 1=iOS)' })
+  @ApiOperation({
+    summary: 'Définir le minimum requis d\'une plateforme (os: 0=Android, 1=iOS). '
+      + 'Supprime les versions au-dessus / insère la ligne manquante pour que MAX == cible.',
+  })
   set(@Body() body: { os: number; requiredVersion: number }) {
-    return this.clientVersion.setRequiredVersion(Number(body?.os), Number(body?.requiredVersion));
+    return this.clientVersion.setMinimumVersion(Number(body?.os), Number(body?.requiredVersion));
   }
 }

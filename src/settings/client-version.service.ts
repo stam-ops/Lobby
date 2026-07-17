@@ -65,18 +65,43 @@ export class ClientVersionService {
     return this.get();
   }
 
-  /** UPDATE clientversion SET requiredversion = ? WHERE os = ? (aligne toutes les lignes de l'OS). */
-  async setRequiredVersion(os: number, requiredVersion: number): Promise<ClientVersionPayload> {
+  /**
+   * Fixe le minimum requis d'un OS à `requiredVersion`.
+   *
+   * Le seuil runtime étant MAX(requiredversion) WHERE os = ?, on ne peut pas « choisir » une valeur
+   * arbitrairement : il faut façonner le catalogue pour que son MAX vaille exactement la cible.
+   *   1. DELETE des lignes AU-DESSUS de la cible (seule façon de redescendre un seuil).
+   *   2. INSERT d'une ligne à la cible si l'OS n'en a pas (seule façon de monter).
+   * → MAX(os) == requiredVersion garanti, et l'historique <= cible est conservé.
+   *
+   * Un UPDATE global (SET requiredversion = ? WHERE os = ?) serait destructeur : il écraserait
+   * aussi les lignes inférieures, supprimant l'historique des versions publiées.
+   */
+  async setMinimumVersion(os: number, requiredVersion: number): Promise<ClientVersionPayload> {
     if (os !== 0 && os !== 1) throw new BadRequestException('os doit valoir 0 (Android) ou 1 (iOS)');
     if (!Number.isInteger(requiredVersion) || requiredVersion < 1) {
       throw new BadRequestException('requiredVersion doit être un entier >= 1');
     }
-    const res = await this.dataSource.query(
-      'UPDATE clientversion SET requiredversion = ? WHERE os = ?', [requiredVersion, os],
-    );
-    if (!res?.affectedRows) {
-      throw new BadRequestException(`Aucune ligne clientversion pour os = ${os}`);
-    }
+
+    await this.dataSource.transaction(async (em) => {
+      await em.query('DELETE FROM clientversion WHERE os = ? AND requiredversion > ?', [os, requiredVersion]);
+
+      const exists = await em.query(
+        'SELECT 1 FROM clientversion WHERE os = ? AND requiredversion = ? LIMIT 1', [os, requiredVersion],
+      );
+      if (!exists.length) {
+        // Métadonnées reprises d'une ligne de même version sur l'autre OS (numérotation globale).
+        const meta = await em.query<{ description: string; currentversion: string }[]>(
+          'SELECT description, currentversion FROM clientversion WHERE requiredversion = ? LIMIT 1',
+          [requiredVersion],
+        );
+        await em.query(
+          'INSERT INTO clientversion (os, requiredversion, description, currentversion) VALUES (?, ?, ?, ?)',
+          [os, requiredVersion, meta[0]?.description ?? `version ${requiredVersion}`, meta[0]?.currentversion ?? ''],
+        );
+      }
+    });
+
     return this.get();
   }
 }
