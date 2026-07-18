@@ -8,6 +8,20 @@ import { BlacklistService } from './blacklist.service';
 /** Type de compte manipulé par le backoffice (dérivé de accounttype). */
 export type PlayerType = 'normal' | 'vip' | 'modo';
 
+/** Paramètres de la liste joueurs (objet plutôt que 10 arguments positionnels). */
+export interface PlayerListParams {
+  search: string;
+  type?: PlayerType;
+  removed?: 'active' | 'removed';
+  os?: number;
+  signInMethod?: number;
+  appVersion?: number;
+  sortBy?: 'creation' | 'solde' | 'cams';
+  sortDir: 'asc' | 'desc';
+  limit: number;
+  offset: number;
+}
+
 /**
  * Conversion robuste vers boolean. mysql2 peut renvoyer un EXISTS/tinyint sous forme de nombre
  * (0/1) OU de chaîne ("0"/"1") selon les cas → `!!"0"` vaudrait `true` (piège). On teste la valeur.
@@ -29,15 +43,16 @@ export class PlayersService {
     private readonly blacklist: BlacklistService,
   ) {}
 
-  async list(
-    search: string,
-    type: PlayerType | undefined,
-    removed: 'active' | 'removed' | undefined,
-    sortBy: 'creation' | 'solde' | 'cams' | undefined,
-    sortDir: 'asc' | 'desc',
-    limit: number,
-    offset: number,
-  ): Promise<PlayerListDto> {
+  /** Valeurs distinctes d'appversion présentes en base, pour alimenter le filtre déroulant. */
+  async filterOptions(): Promise<{ appVersions: number[] }> {
+    const rows = await this.dataSource.query<{ v: number }[]>(
+      'SELECT DISTINCT appversion AS v FROM playerinfos WHERE appversion IS NOT NULL ORDER BY v DESC',
+    );
+    return { appVersions: rows.map((r) => Number(r.v)) };
+  }
+
+  async list(params: PlayerListParams): Promise<PlayerListDto> {
+    const { search, type, removed, os, signInMethod, appVersion, sortBy, sortDir, limit, offset } = params;
     const like = `%${search}%`;
     const searchId = /^\d+$/.test(search) ? Number(search) : -1;
     const conds: string[] = [];
@@ -51,6 +66,9 @@ export class PlayersService {
     else if (type === 'modo') conds.push('p.accounttype >= 2');
     if (removed === 'active') conds.push('p.toremove = 0');
     else if (removed === 'removed') conds.push('p.toremove = 1');
+    if (os != null) { conds.push('pi.os = ?'); whereArgs.push(os); }
+    if (signInMethod != null) { conds.push('pi.signinmethod = ?'); whereArgs.push(signInMethod); }
+    if (appVersion != null) { conds.push('pi.appversion = ?'); whereArgs.push(appVersion); }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
     // ORDER BY sécurisé (whitelist) : défaut = plus récents.
