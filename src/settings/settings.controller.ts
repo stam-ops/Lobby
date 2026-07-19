@@ -1,7 +1,7 @@
 import { Body, Controller, Get, Param, Patch } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiTags } from '@nestjs/swagger';
 import { SettingsService } from './settings.service';
-import { CONFIG_TABLE_NAMES } from './settings.constants';
+import { CONFIG_PAGE_KEYS } from './settings.constants';
 import { Auth, Roles } from '../auth/auth.decorator';
 
 @ApiTags('Config (backoffice)')
@@ -11,22 +11,22 @@ import { Auth, Roles } from '../auth/auth.decorator';
 export class SettingsController {
   constructor(private readonly settings: SettingsService) {}
 
-  @Get('tables')
-  @ApiOperation({ summary: 'Tables de configuration éditables' })
-  tables() {
-    return CONFIG_TABLE_NAMES;
+  @Get('pages')
+  @ApiOperation({ summary: 'Pages de configuration éditables' })
+  pages() {
+    return CONFIG_PAGE_KEYS;
   }
 
-  @Get(':table')
-  @ApiOperation({ summary: 'Valeurs + métadonnées des champs d\'une table de configuration' })
-  get(@Param('table') table: string) {
-    return this.settings.get(table);
+  @Get(':page')
+  @ApiOperation({ summary: 'Valeurs + groupes/légendes d\'une page de configuration' })
+  get(@Param('page') page: string) {
+    return this.settings.get(page);
   }
 
-  @Patch(':table')
+  @Patch(':page')
   @Roles('admin')
   @ApiOperation({ summary: 'Modifier des valeurs (colonnes whitelistées ; flags = 0/1)' })
-  update(@Param('table') table: string, @Body() patch: Record<string, unknown>) {
-    return this.settings.update(table, patch);
+  update(@Param('page') page: string, @Body() patch: Record<string, unknown>) {
+    return this.settings.update(page, patch);
   }
 }
