@@ -1,4 +1,4 @@
-import { Injectable } from '@nestjs/common';
+import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { FrontServerDto, SipServerDto } from './dto/server.dto';
@@ -41,6 +41,22 @@ export class ServersService {
       r.master = toBool(r.master);
     }
     return rows;
+  }
+
+  /**
+   * Modifie la capacité d'un front. C'est bien cette colonne que le load balancer utilise :
+   * getConnectFqdn filtre `connexions ouvertes < f.maxconnection` (cf. front.service.ts).
+   * Mettre 0 retirerait le front de la rotation → refusé.
+   */
+  async setFrontMaxConnection(frontId: number, maxConnection: number): Promise<FrontServerDto[]> {
+    if (!Number.isInteger(maxConnection) || maxConnection < 1) {
+      throw new BadRequestException('maxConnection doit être un entier >= 1 (0 retirerait le front de la rotation)');
+    }
+    const res = await this.dataSource.query(
+      'UPDATE front SET maxconnection = ? WHERE frontid = ?', [maxConnection, frontId],
+    );
+    if (!res?.affectedRows) throw new NotFoundException(`Front ${frontId} introuvable`);
+    return this.fronts();
   }
 
   async sipServers(): Promise<SipServerDto[]> {

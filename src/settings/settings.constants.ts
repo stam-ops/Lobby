@@ -50,8 +50,8 @@ export const CONFIG_PAGES: Record<string, ConfigPage> = {
     groups: [
       {
         title: 'Plateforme',
+        note: 'Le nombre max de connexions se règle par serveur front (Serveurs → Fronts).',
         fields: [
-          { table: GP, name: 'maxconnections', type: 'number', note: 'connexions simultanées max' },
           { table: GP, name: 'fbloginenabled', type: 'flag', note: 'affichage du bouton de login Facebook' },
         ],
       },

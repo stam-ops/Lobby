@@ -1,8 +1,8 @@
-import { Controller, Get } from '@nestjs/common';
+import { Body, Controller, Get, Param, ParseIntPipe, Patch } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { ServersService } from './servers.service';
 import { FrontServerDto, SipServerDto } from './dto/server.dto';
-import { Auth } from '../auth/auth.decorator';
+import { Auth, Roles } from '../auth/auth.decorator';
 
 @ApiTags('Servers (backoffice)')
 @Auth('admin')
@@ -16,6 +16,16 @@ export class ServersController {
   @ApiResponse({ status: 200, type: [FrontServerDto] })
   fronts() {
     return this.servers.fronts();
+  }
+
+  @Patch('fronts/:frontId')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Modifier la capacité max de connexions d\'un front' })
+  setFrontMax(
+    @Param('frontId', ParseIntPipe) frontId: number,
+    @Body() body: { maxConnection: number },
+  ) {
+    return this.servers.setFrontMaxConnection(frontId, Number(body?.maxConnection));
   }
 
   @Get('sip')
