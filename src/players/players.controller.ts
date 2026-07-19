@@ -26,6 +26,8 @@ export class PlayersController {
   @ApiQuery({ name: 'os', required: false, description: '0 = Android, 1 = iOS' })
   @ApiQuery({ name: 'signInMethod', required: false, description: '0=FB, 1=iOS, 2=tél, 3=Google' })
   @ApiQuery({ name: 'appVersion', required: false })
+  @ApiQuery({ name: 'sponsorCode', required: false, description: 'Code de parrainage exact du joueur' })
+  @ApiQuery({ name: 'sponsor', required: false, description: 'Parrain : playerId, code ou pseudo' })
   @ApiQuery({ name: 'sortBy', required: false, enum: ['creation', 'solde', 'cams'] })
   @ApiQuery({ name: 'sortDir', required: false, enum: ['asc', 'desc'] })
   @ApiQuery({ name: 'limit', required: false })
@@ -38,6 +40,8 @@ export class PlayersController {
     @Query('os') os: string,
     @Query('signInMethod') signInMethod: string,
     @Query('appVersion') appVersion: string,
+    @Query('sponsorCode', new DefaultValuePipe('')) sponsorCode: string,
+    @Query('sponsor', new DefaultValuePipe('')) sponsor: string,
     @Query('sortBy') sortBy: 'creation' | 'solde' | 'cams',
     @Query('sortDir') sortDir: 'asc' | 'desc',
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
@@ -55,6 +59,8 @@ export class PlayersController {
       os: intOpt(os),
       signInMethod: intOpt(signInMethod),
       appVersion: intOpt(appVersion),
+      sponsorCode: sponsorCode.trim() || undefined,
+      sponsor: sponsor.trim() || undefined,
       sortBy: ['creation', 'solde', 'cams'].includes(sortBy) ? sortBy : undefined,
       sortDir: sortDir === 'asc' ? 'asc' : 'desc',
       limit: Math.min(limit, 200),

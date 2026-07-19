@@ -16,6 +16,9 @@ export interface PlayerListParams {
   os?: number;
   signInMethod?: number;
   appVersion?: number;
+  sponsorCode?: string;
+  /** Parrain : pseudo, playerId ou code de parrainage du parrain. */
+  sponsor?: string;
   sortBy?: 'creation' | 'solde' | 'cams';
   sortDir: 'asc' | 'desc';
   limit: number;
@@ -52,7 +55,9 @@ export class PlayersService {
   }
 
   async list(params: PlayerListParams): Promise<PlayerListDto> {
-    const { search, type, removed, os, signInMethod, appVersion, sortBy, sortDir, limit, offset } = params;
+    const {
+      search, type, removed, os, signInMethod, appVersion, sponsorCode, sponsor, sortBy, sortDir, limit, offset,
+    } = params;
     const like = `%${search}%`;
     const searchId = /^\d+$/.test(search) ? Number(search) : -1;
     const conds: string[] = [];
@@ -69,6 +74,20 @@ export class PlayersService {
     if (os != null) { conds.push('pi.os = ?'); whereArgs.push(os); }
     if (signInMethod != null) { conds.push('pi.signinmethod = ?'); whereArgs.push(signInMethod); }
     if (appVersion != null) { conds.push('pi.appversion = ?'); whereArgs.push(appVersion); }
+    if (sponsorCode) { conds.push('p.sponsorcode = ?'); whereArgs.push(sponsorCode); }
+    if (sponsor) {
+      // Filleuls d'un parrain : EXISTS plutôt qu'un JOIN, pour ne pas dupliquer les lignes si un
+      // joueur a plusieurs entrées `sponsor`. Le parrain est désigné par son id, pseudo ou code.
+      const sponsorId = /^\d+$/.test(sponsor) ? Number(sponsor) : -1;
+      conds.push(`EXISTS (
+        SELECT 1 FROM sponsor s
+        JOIN player sp2 ON sp2.playerid = s.playeridfrom
+        LEFT JOIN playerinfos spi ON spi.playerid = s.playeridfrom
+        WHERE s.playeridto = p.playerid
+          AND (s.playeridfrom = ? OR sp2.sponsorcode = ? OR spi.screenname LIKE ?)
+      )`);
+      whereArgs.push(sponsorId, sponsor, `%${sponsor}%`);
+    }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
     // ORDER BY sécurisé (whitelist) : défaut = plus récents.
@@ -82,6 +101,7 @@ export class PlayersService {
       `
       SELECT p.playerid AS playerId, pi.screenname AS screenName, p.accounttype AS accountType,
              p.creationts AS creationTs, p.endvipts AS endVipTs, p.toremove AS toRemove,
+             p.sponsorcode AS sponsorCode,
              (COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) AS solde, COALESCE(pa.cams, 0) AS cams,
              EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid) AS siteBanned
       FROM player p
@@ -115,6 +135,8 @@ export class PlayersService {
       `
       SELECT p.playerid AS playerId, pi.screenname AS screenName, p.accounttype AS accountType,
              p.creationts AS creationTs, p.endvipts AS endVipTs, p.toremove AS toRemove,
+             p.sponsorcode AS sponsorCode,
+             sp.playeridfrom AS sponsorPlayerId, psp.screenname AS sponsorScreenName,
              pi.email AS email, pi.firstname AS firstName, pi.lastname AS lastName,
              pi.sex AS sex, pi.birthdate AS birthdate, pi.signinmethod AS signInMethod,
              pi.fbuid AS fbUid, pi.os AS os, pi.langid AS langId, pi.appversion AS appVersion,
@@ -128,6 +150,9 @@ export class PlayersService {
       FROM player p
       JOIN playerinfos pi ON pi.playerid = p.playerid
       LEFT JOIN playeraccount pa ON pa.playerid = p.playerid
+      -- Parrain : sponsor.playeridfrom pour la ligne où le joueur est le filleul (playeridto).
+      LEFT JOIN sponsor sp ON sp.playeridto = p.playerid
+      LEFT JOIN playerinfos psp ON psp.playerid = sp.playeridfrom
       WHERE p.playerid = ?
       `,
       [playerId],
