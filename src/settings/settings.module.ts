@@ -7,9 +7,13 @@ import { PromoController } from './promo.controller';
 import { PromoService } from './promo.service';
 import { BonusController } from './bonus.controller';
 import { BonusService } from './bonus.service';
+import { ModerationController } from './moderation.controller';
+import { ModerationService } from './moderation.service';
 
 @Module({
-  controllers: [SettingsController, ClientVersionController, PromoController, BonusController],
-  providers: [SettingsService, ClientVersionService, PromoService, BonusService],
+  controllers: [
+    SettingsController, ClientVersionController, PromoController, BonusController, ModerationController,
+  ],
+  providers: [SettingsService, ClientVersionService, PromoService, BonusService, ModerationService],
 })
 export class SettingsModule {}
