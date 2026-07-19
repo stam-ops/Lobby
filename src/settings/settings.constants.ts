@@ -81,7 +81,10 @@ export const CONFIG_PAGES: Record<string, ConfigPage> = {
           { table: SL, name: 'socialxpword', type: 'number', note: 'XP gagnée par message' },
           { table: SL, name: 'maxsocialperday', type: 'number', note: 'XP sociale max par jour' },
           { table: SL, name: 'maxbanmessage', type: 'number', note: 'bannissement auto pour spam de tchat' },
-          { table: SL, name: 'minbbnotifcashpot', type: 'number', note: 'notif « gros gain » si le pot dépasse N big blinds' },
+          {
+            table: SL, name: 'minbbnotifcashpot', type: 'number', readOnly: true,
+            note: 'notif « gros gain » si le pot dépasse N big blinds — non utilisé sur TableServer',
+          },
         ],
       },
       {
