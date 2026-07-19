@@ -51,6 +51,12 @@ export class PromoController {
     return this.promos.addCode(promoId, body?.code, Number(body?.codeLimit ?? 0));
   }
 
+  @Get('codes/:codePromoId/players')
+  @ApiOperation({ summary: 'Joueurs ayant utilisé un code promo' })
+  codePlayers(@Param('codePromoId', ParseIntPipe) codePromoId: number) {
+    return this.promos.codePlayers(codePromoId);
+  }
+
   @Patch('codes/:codePromoId')
   @Roles('admin')
   @ApiOperation({ summary: 'Modifier la limite d\'utilisation d\'un code' })

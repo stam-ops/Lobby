@@ -11,6 +11,16 @@ export interface PromoRow {
   playerCount: number;
 }
 
+export interface CodePromoPlayerRow {
+  playerId: number;
+  screenName: string;
+  creationTs: string;
+  consumptionTs: string;
+  sessionsLastMonth: number;
+  amount: number;
+  cams: number;
+}
+
 export interface CodePromoRow {
   codePromoId: number;
   promoId: number;
@@ -109,6 +119,30 @@ export class PromoService {
       r.codeState = Number(r.codeState);
       r.codeLimit = Number(r.codeLimit);
       r.usedCount = Number(r.usedCount);
+    });
+    return rows;
+  }
+
+  /** Joueurs ayant consommé un code (consumedpromotion) + activité et soldes. */
+  async codePlayers(codePromoId: number): Promise<CodePromoPlayerRow[]> {
+    const rows = await this.dataSource.query<CodePromoPlayerRow[]>(
+      `SELECT p.playerid AS playerId, pi.screenname AS screenName,
+              p.creationts AS creationTs, c.consumptionts AS consumptionTs,
+              (SELECT COUNT(*) FROM playersession ps
+                 WHERE ps.playerid = p.playerid AND ps.startts >= NOW() - INTERVAL 30 DAY) AS sessionsLastMonth,
+              COALESCE(pa.amount, 0) AS amount, COALESCE(pa.cams, 0) AS cams
+       FROM consumedpromotion c
+       JOIN player p ON p.playerid = c.playerid
+       LEFT JOIN playerinfos pi ON pi.playerid = p.playerid
+       LEFT JOIN playeraccount pa ON pa.playerid = p.playerid
+       WHERE c.codepromoid = ?
+       ORDER BY c.consumptionts DESC`,
+      [codePromoId],
+    );
+    rows.forEach((r) => {
+      r.sessionsLastMonth = Number(r.sessionsLastMonth);
+      r.amount = Number(r.amount);
+      r.cams = Number(r.cams);
     });
     return rows;
   }
