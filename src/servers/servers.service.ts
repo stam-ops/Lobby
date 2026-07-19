@@ -46,11 +46,14 @@ export class ServersService {
   /**
    * Modifie la capacité d'un front. C'est bien cette colonne que le load balancer utilise :
    * getConnectFqdn filtre `connexions ouvertes < f.maxconnection` (cf. front.service.ts).
-   * Mettre 0 retirerait le front de la rotation → refusé.
+   *
+   * 0 est AUTORISÉ et sert de coupe-circuit : la condition devient toujours fausse, le front sort
+   * de la rotation. À 0 sur tous les fronts, getConnectFqdn ne renvoie plus de fqdn → l'app bascule
+   * en mode maintenance (cf. campok apiClient : fqdn vide = maintenance).
    */
   async setFrontMaxConnection(frontId: number, maxConnection: number): Promise<FrontServerDto[]> {
-    if (!Number.isInteger(maxConnection) || maxConnection < 1) {
-      throw new BadRequestException('maxConnection doit être un entier >= 1 (0 retirerait le front de la rotation)');
+    if (!Number.isInteger(maxConnection) || maxConnection < 0) {
+      throw new BadRequestException('maxConnection doit être un entier positif ou nul');
     }
     const res = await this.dataSource.query(
       'UPDATE front SET maxconnection = ? WHERE frontid = ?', [maxConnection, frontId],
