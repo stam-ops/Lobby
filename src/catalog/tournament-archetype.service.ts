@@ -11,6 +11,22 @@ export const PERIOD_TYPE = {
   daysOfMonth: 5,
 } as const;
 
+/**
+ * Restriction d'accès — cf. ClientCodes/…/tournament/TournamentArchetypeType.java.
+ * Appliqué à l'inscription par Bdd/…/meta/TournamentM.tryTournamentSubscription (switch ligne 112).
+ *
+ * ⚠️ `accessCode` (4) ne privatise PAS le tournoi dans le lobby : il reste listé, seule
+ * l'inscription est protégée. La privatisation réelle passe par `clubid`, qui est filtré
+ * hors du lobby public (`Tournament.java` : `AND ta.clubid IS NULL`).
+ */
+export const TOURNAMENT_ARCH_TYPE = {
+  classic: 0,
+  ladiesOnly: 1,
+  vipOnly: 2,
+  levelMin: 3,
+  accessCode: 4,
+} as const;
+
 export interface LookupOption { id: number; label: string }
 
 export interface ArchetypeLookups {
@@ -125,7 +141,7 @@ export class TournamentArchetypeService {
       SELECT ta.tournamentarchetypeid AS id, ta.label, ta.description, ta.type,
              ta.minplayers AS minPlayers, ta.maxplayers AS maxPlayers, ta.tablesize AS tableSize,
              ta.starttype AS startType, ta.periodtype AS periodType, ta.perioddata AS periodData,
-             ta.periodstart AS periodStart, ta.timeforsubscriptionsbeforestart AS subscriptionSeconds,
+             ta.periodstart AS periodStart, ta.timeforsubscriptionsbeforestart AS subscriptionMinutes,
              ta.structuretype AS structureType, ta.buyin AS buyIn,
              ta.addonbreakindex AS addonBreakIndex, ta.lastlateregisterlevel AS lastLateRegisterLevel,
              ta.moneytype AS moneyType, ta.gametype AS gameType, ta.limittype AS limitType,
@@ -179,6 +195,67 @@ export class TournamentArchetypeService {
       throw new BadRequestException('Date de départ (periodStart) requise pour ce type de périodicité');
     }
 
+    // `type` et ses colonnes compagnes doivent être cohérents, sinon le tournoi part cassé :
+    // TournamentM.tryTournamentSubscription échoue FERMÉ sur un type 4 sans accesscode
+    // (badAccessCode), ce qui rend le tournoi visible dans le lobby mais impossible à rejoindre.
+    const type = num(body.type);
+    if (type > TOURNAMENT_ARCH_TYPE.accessCode) {
+      throw new BadRequestException(`Type d'accès inconnu : ${type}`);
+    }
+    const accessCode = body.accessCode ? String(body.accessCode).trim().slice(0, 32) : null;
+    if (type === TOURNAMENT_ARCH_TYPE.accessCode && !accessCode) {
+      throw new BadRequestException(
+        "Un tournoi privé (type « Code d'accès ») exige un code : sans lui, aucune inscription n'est possible.",
+      );
+    }
+    if (type !== TOURNAMENT_ARCH_TYPE.accessCode && accessCode) {
+      throw new BadRequestException(
+        "Un code d'accès n'est lu que par le type « Code d'accès » : il serait ignoré ici.",
+      );
+    }
+    const minLevel = num(body.minLevel);
+    if (type === TOURNAMENT_ARCH_TYPE.levelMin && minLevel < 1) {
+      throw new BadRequestException('Le type « Niveau minimum » exige un niveau >= 1.');
+    }
+
+    // ⚠️ `timeforsubscriptionsbeforestart` est en MINUTES, pas en secondes : Tournament.java
+    // teste `now > start - subTime * 60 * 1000`. Le nom de colonne ne le dit pas.
+    const subscriptionMinutes = num(body.subscriptionMinutes, 60);
+
+    // structuretype shootOut (1) est INCOMPLET côté serveur : ServersManager.setArchPrizeStructure
+    // fait `case StructureType.shootOut: // TODO return false`, donc l'archétype n'est JAMAIS
+    // instancié et boucle en log SEVERE. On n'accepte que classic tant que ce n'est pas implémenté.
+    const structureType = num(body.structureType);
+    if (structureType !== 0) {
+      throw new BadRequestException(
+        'Seule la structure « Classique » est supportée : le mode shootOut n\'est pas implémenté '
+        + 'dans ServersManager (l\'archétype ne serait jamais instancié).',
+      );
+    }
+
+    // hasvideo = 2 (optionnelle) n'a AUCUNE ligne dans `tournamentrake` : le rake tombe à 0, ce qui
+    // fait échouer ServersManager.setArchPrizeStructure et gonfle les prize pools sur l'autre chemin.
+    const hasVideo = num(body.hasVideo, 1);
+    if (hasVideo === 2) {
+      throw new BadRequestException(
+        'Vidéo « optionnelle » (2) non supportée pour un tournoi : aucune ligne `tournamentrake` '
+        + 'n\'existe pour cette valeur, le rake tomberait à 0.',
+      );
+    }
+
+    // Un addon est déclenché par un BREAK, et les SNG (starttype 0) ne prennent jamais de break
+    // (TournamentServer : `if (startType != maxPlayersReached) checkBreak()`). Un addonbreakindex
+    // non nul sur un SNG bloque donc `areAddonsDone()` pour toujours → la structure de prix n'est
+    // jamais figée et le tournoi ne peut pas se terminer.
+    const startType = num(body.startType, 1);
+    const addonBreakIndex = num(body.addonBreakIndex);
+    if (startType === 0 && addonBreakIndex > 0) {
+      throw new BadRequestException(
+        'Un SNG (démarrage « max joueurs atteint ») ne prend jamais de break : un palier d\'addon '
+        + 'non nul empêcherait définitivement la clôture du tournoi. Mettre 0.',
+      );
+    }
+
     const active = body.active === undefined ? true : !!body.active;
 
     const res = await this.dataSource.query(
@@ -192,18 +269,18 @@ export class TournamentArchetypeService {
         label.slice(0, 200),
         String(body.description ?? '').slice(0, 2000),
         minPlayers, maxPlayers, tableSize,
-        num(body.startType), periodType, periodData,
-        periodStart, num(body.subscriptionSeconds),
-        num(body.structureType), num(body.buyIn), num(body.addonBreakIndex),
-        num(body.lastLateRegisterLevel), num(body.moneyType), num(body.gameType), num(body.limitType),
+        startType, periodType, periodData,
+        periodStart, subscriptionMinutes,
+        structureType, num(body.buyIn), addonBreakIndex,
+        num(body.lastLateRegisterLevel), num(body.moneyType, 1), num(body.gameType), num(body.limitType),
         blindStructureId,
         body.prizeStructureId ? num(body.prizeStructureId) : null,
-        num(body.initStack), gameTimeId, num(body.hasVideo),
+        num(body.initStack), gameTimeId, hasVideo,
         active ? 0 : 1, // ⚠️ inversé : 0 = actif
-        num(body.type), num(body.minLevel),
+        type, minLevel,
         body.clubId ? num(body.clubId) : null,
         body.clubSendCampoke ? 1 : 0,
-        body.accessCode ? String(body.accessCode).slice(0, 32) : null,
+        accessCode,
       ],
     );
     return { id: Number(res?.insertId ?? 0) };

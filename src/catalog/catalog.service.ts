@@ -34,13 +34,23 @@ export class CatalogService {
     return rows[0];
   }
 
-  tournamentArchetypes(): Promise<TournamentArchetypeRowDto[]> {
-    return this.dataSource.query(`
+  /**
+   * ⚠️ `tournamentarchetype.isvalid` est INVERSÉ (0 = planifié, 1 = désactivé) : ServersManager
+   * lit `WHERE isvalid = 0` et `invalidateTournamentArchetype` écrit 1. On expose donc un booléen
+   * `active` déjà redressé — exposer la colonne brute affichait le statut à l'envers.
+   *
+   * À ne pas généraliser : `gametablearchetype.isvalid` suit la convention NORMALE
+   * (`WHERE isvalid = 1` = actif, cf. GameTableArchetype.java).
+   */
+  async tournamentArchetypes(): Promise<TournamentArchetypeRowDto[]> {
+    const rows = await this.dataSource.query(`
       SELECT tournamentarchetypeid AS id, label, type, buyin AS buyIn, maxplayers AS maxPlayers,
-             tablesize AS tableSize, structuretype AS structureType, hasvideo AS hasVideo, isvalid AS isValid
+             tablesize AS tableSize, structuretype AS structureType, hasvideo AS hasVideo,
+             (isvalid = 0) AS active
       FROM tournamentarchetype
       ORDER BY tournamentarchetypeid DESC
     `);
+    return rows.map((r: Record<string, unknown>) => ({ ...r, active: Number(r.active) === 1 }));
   }
 
   async tournaments(archetypeId: number | undefined, limit: number, offset: number): Promise<TournamentListDto> {
