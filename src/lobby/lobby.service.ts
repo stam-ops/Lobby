@@ -194,7 +194,13 @@ export class LobbyService {
         ta.tablesize                            AS tableSize,
         ta.structuretype                        AS structureType,
         ta.addonbreakindex                      AS addonBreakIndex,
-        ta.lastlateregisterlevel                AS lastLateRegisterLevel
+        ta.lastlateregisterlevel                AS lastLateRegisterLevel,
+        -- Type du tournoi (TournamentArchetypeType) : 0 classic, 1 ladiesOnly, 2 vipOnly,
+        -- 3 levelMin, 4 accessCode (privé par code). Le client s'en sert UNIQUEMENT pour savoir
+        -- s'il doit demander un code avant d'envoyer l'inscription.
+        -- /!\ NE JAMAIS ajouter ta.accesscode ici : le code ne doit pas quitter le serveur, la
+        -- vérification est faite en base à l'inscription (TournamentM.tryTournamentSubscription).
+        ta.type                                 AS type
       FROM tournament t
       JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
       WHERE ta.starttype = 1
@@ -226,7 +232,13 @@ export class LobbyService {
         ta.tablesize                            AS tableSize,
         ta.structuretype                        AS structureType,
         ta.addonbreakindex                      AS addonBreakIndex,
-        ta.lastlateregisterlevel                AS lastLateRegisterLevel
+        ta.lastlateregisterlevel                AS lastLateRegisterLevel,
+        -- Type du tournoi (TournamentArchetypeType) : 0 classic, 1 ladiesOnly, 2 vipOnly,
+        -- 3 levelMin, 4 accessCode (privé par code). Le client s'en sert UNIQUEMENT pour savoir
+        -- s'il doit demander un code avant d'envoyer l'inscription.
+        -- /!\ NE JAMAIS ajouter ta.accesscode ici : le code ne doit pas quitter le serveur, la
+        -- vérification est faite en base à l'inscription (TournamentM.tryTournamentSubscription).
+        ta.type                                 AS type
       FROM tournamentsubscription ts
       JOIN tournament          t  ON t.tournamentid          = ts.tournamentid
       JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
@@ -260,7 +272,13 @@ export class LobbyService {
         ta.tablesize                            AS tableSize,
         ta.structuretype                        AS structureType,
         ta.addonbreakindex                      AS addonBreakIndex,
-        ta.lastlateregisterlevel                AS lastLateRegisterLevel
+        ta.lastlateregisterlevel                AS lastLateRegisterLevel,
+        -- Type du tournoi (TournamentArchetypeType) : 0 classic, 1 ladiesOnly, 2 vipOnly,
+        -- 3 levelMin, 4 accessCode (privé par code). Le client s'en sert UNIQUEMENT pour savoir
+        -- s'il doit demander un code avant d'envoyer l'inscription.
+        -- /!\ NE JAMAIS ajouter ta.accesscode ici : le code ne doit pas quitter le serveur, la
+        -- vérification est faite en base à l'inscription (TournamentM.tryTournamentSubscription).
+        ta.type                                 AS type
       FROM tournament t
       JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
       JOIN clubplayer          cp ON cp.clubid   = ta.clubid
@@ -295,7 +313,13 @@ export class LobbyService {
         ta.tablesize                            AS tableSize,
         ta.structuretype                        AS structureType,
         ta.addonbreakindex                      AS addonBreakIndex,
-        ta.lastlateregisterlevel                AS lastLateRegisterLevel
+        ta.lastlateregisterlevel                AS lastLateRegisterLevel,
+        -- Type du tournoi (TournamentArchetypeType) : 0 classic, 1 ladiesOnly, 2 vipOnly,
+        -- 3 levelMin, 4 accessCode (privé par code). Le client s'en sert UNIQUEMENT pour savoir
+        -- s'il doit demander un code avant d'envoyer l'inscription.
+        -- /!\ NE JAMAIS ajouter ta.accesscode ici : le code ne doit pas quitter le serveur, la
+        -- vérification est faite en base à l'inscription (TournamentM.tryTournamentSubscription).
+        ta.type                                 AS type
       FROM tournament t
       JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
       WHERE ta.clubid = ?

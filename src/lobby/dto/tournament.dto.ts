@@ -58,4 +58,13 @@ export class TournamentDto {
 
   @ApiProperty({ example: 0, description: 'tournamentarchetype.lastlateregisterlevel' })
   lastLateRegisterLevel: number;
+
+  @ApiProperty({
+    example: 0,
+    description:
+      'tournamentarchetype.type — 0 classic, 1 ladiesOnly, 2 vipOnly, 3 levelMin, 4 accessCode ' +
+      '(tournoi privé : le client demande un code avant de soumettre l’inscription). ' +
+      'Le code lui-même n’est jamais exposé.',
+  })
+  type: number;
 }
