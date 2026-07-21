@@ -35,14 +35,31 @@ export class MailService {
     const port = Number(this.config.get('SMTP_PORT', 587));
     const user = this.config.get<string>('SMTP_USER');
     const pass = this.config.get<string>('SMTP_PASSWORD');
+
+    // Mode TLS déduit du port, avec surcharge explicite possible.
+    //
+    // ⚠️ Piège : les ports à TLS IMPLICITE ne se limitent pas à 465. Les hébergeurs bloquant
+    // fréquemment les ports SMTP sortants, les prestataires exposent des ports de repli — chez
+    // Resend, 2465 double 465 (TLS implicite) et 2587 double 587 (STARTTLS). Ne tester que 465
+    // faisait passer 2465 en clair : le serveur attendait une poignée de main TLS pendant que le
+    // client attendait une bannière, d'où un « Greeting never received ».
+    const IMPLICIT_TLS_PORTS = [465, 2465];
+    const secureOverride = this.config.get<string>('SMTP_SECURE');
+    const secure = secureOverride != null && secureOverride !== ''
+      ? secureOverride === 'true'
+      : IMPLICIT_TLS_PORTS.includes(port);
+
     this.transporter = createTransport({
       host,
       port,
-      // 465 = TLS implicite ; 587 et 25 montent en TLS via STARTTLS.
-      secure: port === 465,
+      secure,
       auth: user ? { user, pass } : undefined,
+      // Sans délai explicite, un port filtré laisse la requête pendante très longtemps et
+      // l'inscription paraît figée côté navigateur.
+      connectionTimeout: 10_000,
+      greetingTimeout: 10_000,
     });
-    this.logger.log(`SMTP configuré : ${host}:${port}`);
+    this.logger.log(`SMTP configuré : ${host}:${port} (TLS ${secure ? 'implicite' : 'STARTTLS'})`);
   }
 
   /** Retourne false si l'envoi a échoué — l'appelant décide si c'est bloquant. */
