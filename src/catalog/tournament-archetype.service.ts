@@ -52,6 +52,63 @@ export interface ArchetypeLookups {
  *   - daysOfWeek   : "1,2@21:00" (1 = lundi … 7 = dimanche), heure Europe/Paris.
  *   - daysOfMonth  : "1,15@20:30" (jours du mois), heure Europe/Paris.
  */
+/** Fuseau de planification, identique à ServersManager (`TimeZone.getTimeZone("Europe/Paris")`). */
+const SCHEDULE_TZ = 'Europe/Paris';
+
+/** Offset d'Europe/Paris (en secondes) à un instant UTC donné — DST géré via Intl. */
+function parisOffsetSeconds(utcMillis: number): number {
+  const dtf = new Intl.DateTimeFormat('en-US', {
+    timeZone: SCHEDULE_TZ, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const p: Record<string, number> = {};
+  for (const part of dtf.formatToParts(new Date(utcMillis))) {
+    if (part.type !== 'literal') p[part.type] = Number(part.value);
+  }
+  const asUtc = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  return Math.round((asUtc - utcMillis) / 1000);
+}
+
+/**
+ * Convertit une heure MURALE Europe/Paris ("YYYY-MM-DDTHH:MM") en secondes epoch.
+ *
+ * ⚠️ Pourquoi c'est nécessaire : `<input type="datetime-local">` envoie une heure sans fuseau,
+ * et `periodstart` est un `TIMESTAMP` MySQL (converti UTC↔session). Sans cette conversion
+ * explicite, « 22:15 » était interprété comme UTC et ServersManager (chemin oneTime :
+ * `arch.startTime = arch.periodStart`, SANS reconversion Paris) lançait le tournoi 2 h trop tard.
+ * On fait donc ici la même hypothèse que le planificateur : l'heure saisie est de l'heure de Paris.
+ * Indépendant du fuseau du process Node ET de la session MySQL (on insère via FROM_UNIXTIME).
+ */
+function parisWallClockToEpochSeconds(local: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2})(?::(\d{2}))?$/.exec(local.trim());
+  if (!m) {
+    throw new BadRequestException('Date de départ invalide (format attendu AAAA-MM-JJTHH:MM).');
+  }
+  const [Y, Mo, D, H, Mi, S] = m.slice(1).map((v) => Number(v ?? 0));
+  const asIfUtc = Date.UTC(Y, Mo - 1, D, H, Mi, S);
+  // Corrige avec l'offset réel ; recalcule une fois pour les bascules d'heure d'été/hiver.
+  const off1 = parisOffsetSeconds(asIfUtc);
+  let epoch = asIfUtc - off1 * 1000;
+  const off2 = parisOffsetSeconds(epoch);
+  if (off2 !== off1) epoch = asIfUtc - off2 * 1000;
+  return Math.floor(epoch / 1000);
+}
+
+/** Epoch secondes → chaîne murale Paris "YYYY-MM-DDTHH:MM:SS" (pour relecture/affichage). */
+function epochSecondsToParisWallClock(epochSeconds: number): string {
+  const dtf = new Intl.DateTimeFormat('en-CA', {
+    timeZone: SCHEDULE_TZ, hourCycle: 'h23',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  });
+  const p: Record<string, string> = {};
+  for (const part of dtf.formatToParts(new Date(epochSeconds * 1000))) {
+    if (part.type !== 'literal') p[part.type] = part.value;
+  }
+  return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
+}
+
 @Injectable()
 export class TournamentArchetypeService {
   constructor(private readonly dataSource: DataSource) {}
@@ -141,7 +198,8 @@ export class TournamentArchetypeService {
       SELECT ta.tournamentarchetypeid AS id, ta.label, ta.description, ta.type,
              ta.minplayers AS minPlayers, ta.maxplayers AS maxPlayers, ta.tablesize AS tableSize,
              ta.starttype AS startType, ta.periodtype AS periodType, ta.perioddata AS periodData,
-             ta.periodstart AS periodStart, ta.timeforsubscriptionsbeforestart AS subscriptionMinutes,
+             UNIX_TIMESTAMP(ta.periodstart) AS periodStartEpoch,
+             ta.timeforsubscriptionsbeforestart AS subscriptionMinutes,
              ta.structuretype AS structureType, ta.buyin AS buyIn,
              ta.addonbreakindex AS addonBreakIndex, ta.lastlateregisterlevel AS lastLateRegisterLevel,
              ta.moneytype AS moneyType, ta.gametype AS gameType, ta.limittype AS limitType,
@@ -154,12 +212,19 @@ export class TournamentArchetypeService {
       FROM tournamentarchetype ta
       ORDER BY ta.tournamentarchetypeid DESC
     `);
-    return rows.map((r: Record<string, unknown>) => ({
-      ...r,
-      active: Number(r.active) === 1,
-      clubSendCampoke: Number(r.clubSendCampoke) === 1,
-      tournamentCount: Number(r.tournamentCount),
-    }));
+    return rows.map((r: Record<string, unknown>) => {
+      const epoch = r.periodStartEpoch == null ? null : Number(r.periodStartEpoch);
+      const { periodStartEpoch, ...rest } = r;
+      void periodStartEpoch;
+      return {
+        ...rest,
+        // Renvoyée en heure murale Paris pour réafficher exactement ce qui a été saisi.
+        periodStart: epoch && epoch > 0 ? epochSecondsToParisWallClock(epoch) : null,
+        active: Number(r.active) === 1,
+        clubSendCampoke: Number(r.clubSendCampoke) === 1,
+        tournamentCount: Number(r.tournamentCount),
+      };
+    });
   }
 
   /** Colonnes acceptées à la création (whitelist) — `isvalid` est piloté via `active`. */
@@ -189,9 +254,14 @@ export class TournamentArchetypeService {
     if (!gameTimeId) throw new BadRequestException('Game time requis');
 
     // periodstart : requis pour oneTime / everyXMinutes / everyDay (point de départ du calcul).
-    const periodStart = body.periodStart ? String(body.periodStart) : null;
-    if ([PERIOD_TYPE.oneTime, PERIOD_TYPE.everyXMinutes, PERIOD_TYPE.everyDay].includes(periodType as 1 | 2 | 3)
-        && !periodStart) {
+    // On interprète l'heure saisie en Europe/Paris (comme ServersManager) et on stocke l'instant
+    // absolu en secondes epoch — inséré via FROM_UNIXTIME pour ne pas dépendre du fuseau de session.
+    const needsStart = [PERIOD_TYPE.oneTime, PERIOD_TYPE.everyXMinutes, PERIOD_TYPE.everyDay]
+      .includes(periodType as 1 | 2 | 3);
+    const periodStartEpoch = body.periodStart
+      ? parisWallClockToEpochSeconds(String(body.periodStart))
+      : null;
+    if (needsStart && periodStartEpoch == null) {
       throw new BadRequestException('Date de départ (periodStart) requise pour ce type de périodicité');
     }
 
@@ -264,13 +334,14 @@ export class TournamentArchetypeService {
          periodstart, timeforsubscriptionsbeforestart, structuretype, buyin, addonbreakindex,
          lastlateregisterlevel, moneytype, gametype, limittype, blindstructureid, prizestructureid,
          initstack, gametimeid, hasvideo, isvalid, type, minlevel, clubid, clubsendcampoke, accesscode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         label.slice(0, 200),
         String(body.description ?? '').slice(0, 2000),
         minPlayers, maxPlayers, tableSize,
         startType, periodType, periodData,
-        periodStart, subscriptionMinutes,
+        // FROM_UNIXTIME(NULL) = NULL : instant absolu, insensible au fuseau de session MySQL.
+        periodStartEpoch, subscriptionMinutes,
         structureType, num(body.buyIn), addonBreakIndex,
         num(body.lastLateRegisterLevel), num(body.moneyType, 1), num(body.gameType), num(body.limitType),
         blindStructureId,
