@@ -500,6 +500,12 @@ export class TournamentArchetypeService {
         + `(reçu : ${prizeStructureId}).`,
       );
     }
+    if (body.clubId) {
+      throw new BadRequestException(
+        'Les tournois de club ne sont pas exploitables : les tables `club`/`clubplayer` sont absentes, '
+        + "l'inscription échouerait. Utiliser le type « Code d'accès » pour un tournoi privé.",
+      );
+    }
     if (buyIn > 0 && buyIn < MIN_BUY_IN) {
       throw new BadRequestException(
         `Buy-in trop faible : ${MIN_BUY_IN} minimum, sinon la dotation générée s'effondre à zéro `
@@ -555,8 +561,13 @@ export class TournamentArchetypeService {
         num(body.initStack), gameTimeId, hasVideo,
         active ? 0 : 1, // ⚠️ inversé : 0 = actif
         type, minLevel,
-        body.clubId ? num(body.clubId) : null,
-        body.clubSendCampoke ? 1 : 0,
+        // ⚠️ `clubid` est FORCÉ à NULL : les tables `club`/`clubplayer` n'existent pas sur cette
+        // base, alors que TournamentM.tryTournamentSubscription appelle Club.playerIsClubMember dès
+        // que clubId != 0 — l'inscription échouerait sur une erreur SQL, et le tournoi serait en
+        // plus masqué du lobby (`AND ta.clubid IS NULL`). Pour un tournoi privé, utiliser le type
+        // « Code d'accès » (4), qui ne dépend d'aucune table manquante.
+        null,
+        0,
         accessCode,
       ],
     );

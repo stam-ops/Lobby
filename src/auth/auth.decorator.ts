@@ -20,8 +20,13 @@ export const Public = () => SetMetadata(PUBLIC_KEY, true);
 
 /**
  * Restreint une route admin à certains rôles backoffice. À combiner avec @Auth('admin').
- * Sans @Roles, tout admin authentifié passe.
+ *
+ * Sans @Roles, la route est réservée aux rôles INTERNES (DEFAULT_BACKOFFICE_ROLES) : un rôle
+ * externe — organisateur, club — n'accède donc à RIEN tant qu'une route ne le nomme pas
+ * explicitement. C'est volontairement l'inverse de l'ancien comportement, où l'absence de @Roles
+ * laissait passer n'importe quel admin authentifié.
  *
  *   @Auth('admin') @Roles('admin')   // admins uniquement (pas les 'support')
+ *   @Auth('admin') @Roles('club')    // réservé aux organisateurs
  */
 export const Roles = (...roles: AdminRole[]) => SetMetadata(ROLES_KEY, roles);

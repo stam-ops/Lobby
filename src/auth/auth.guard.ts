@@ -10,7 +10,9 @@ import { Reflector } from '@nestjs/core';
 import { ConfigService } from '@nestjs/config';
 import { PlayerSessionService } from './player-session.service';
 import { AdminAuthService } from './admin-auth.service';
-import { AdminRole, AuthAudience, AUTH_KEY, PUBLIC_KEY, ROLES_KEY } from './auth.types';
+import {
+  AdminRole, AuthAudience, AUTH_KEY, DEFAULT_BACKOFFICE_ROLES, PUBLIC_KEY, ROLES_KEY,
+} from './auth.types';
 
 /**
  * Guard global. Pour chaque route (sauf @Public), tente d'authentifier l'appelant selon les
@@ -57,11 +59,13 @@ export class AuthGuard implements CanActivate {
         ctx.getClass(),
       ]) ?? ['player'];
 
+    // Sans @Roles explicite, on retombe sur les rôles INTERNES uniquement (deny-by-default pour
+    // tout rôle externe) — cf. DEFAULT_BACKOFFICE_ROLES.
     const requiredRoles: AdminRole[] =
       this.reflector.getAllAndOverride<AdminRole[]>(ROLES_KEY, [
         ctx.getHandler(),
         ctx.getClass(),
-      ]) ?? [];
+      ]) ?? DEFAULT_BACKOFFICE_ROLES;
 
     const req = ctx.switchToHttp().getRequest();
     const token = this.extractToken(req);
