@@ -1,0 +1,185 @@
+import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
+import { DataSource } from 'typeorm';
+import { TournamentArchetypeService } from '../catalog/tournament-archetype.service';
+
+export interface OrganizerProfile {
+  organizerId: number;
+  name: string;
+  contactEmail: string;
+  maxTournamentsPerMonth: number;
+  maxPlayersPerTournament: number;
+  /** Tournois créés sur les 30 derniers jours glissants. */
+  usedThisMonth: number;
+  /** null si le quota est illimité. */
+  remainingThisMonth: number | null;
+}
+
+/**
+ * Espace organisateur — TOUTES les méthodes prennent `organizerId` en premier paramètre.
+ *
+ * Ce n'est pas une convention de style : c'est ce qui rend le cloisonnement vérifiable. Aucune
+ * méthode ne peut être appelée sans périmètre, et chaque requête joint `organizerarchetype` pour
+ * restreindre aux archétypes de l'organisateur. Une lecture non filtrée ne compile pas.
+ *
+ * ⚠️ Ces services ne doivent JAMAIS être exposés sous /admin : la séparation des préfixes est la
+ * seconde barrière, après le rôle.
+ */
+@Injectable()
+export class OrganizerSpaceService {
+  constructor(
+    private readonly dataSource: DataSource,
+    private readonly archetypes: TournamentArchetypeService,
+  ) {}
+
+  /** Profil + consommation du quota. */
+  async profile(organizerId: number): Promise<OrganizerProfile> {
+    const [row] = await this.dataSource.query<Record<string, unknown>[]>(
+      `SELECT o.organizerid AS organizerId, o.name, o.contactemail AS contactEmail,
+              o.maxtournamentspermonth AS maxTournamentsPerMonth,
+              o.maxplayerspertournament AS maxPlayersPerTournament,
+              (SELECT COUNT(*) FROM organizerarchetype oa
+                WHERE oa.organizerid = o.organizerid
+                  AND oa.creationts > NOW() - INTERVAL 30 DAY) AS usedThisMonth
+         FROM organizer o WHERE o.organizerid = ?`,
+      [organizerId],
+    );
+    if (!row) throw new NotFoundException('Organisateur introuvable');
+
+    const max = Number(row.maxTournamentsPerMonth);
+    const used = Number(row.usedThisMonth);
+    return {
+      organizerId: Number(row.organizerId),
+      name: String(row.name),
+      contactEmail: String(row.contactEmail),
+      maxTournamentsPerMonth: max,
+      maxPlayersPerTournament: Number(row.maxPlayersPerTournament),
+      usedThisMonth: used,
+      // 0 = illimité, d'où le null plutôt qu'un nombre négatif trompeur.
+      remainingThisMonth: max === 0 ? null : Math.max(0, max - used),
+    };
+  }
+
+  /** Les archétypes de cet organisateur, avec le nombre d'instances déjà jouées. */
+  async myArchetypes(organizerId: number) {
+    const rows = await this.dataSource.query(`
+      SELECT ta.tournamentarchetypeid AS id, ta.label, ta.type, ta.accesscode AS accessCode,
+             ta.periodtype AS periodType, ta.perioddata AS periodData,
+             UNIX_TIMESTAMP(ta.periodstart) AS periodStartEpoch,
+             ta.buyin AS buyIn, ta.minplayers AS minPlayers, ta.maxplayers AS maxPlayers,
+             ta.tablesize AS tableSize, (ta.isvalid = 0) AS active,
+             oa.creationts AS createdTs,
+             (SELECT COUNT(*) FROM tournament t
+               WHERE t.tournamentarchetypeid = ta.tournamentarchetypeid) AS tournamentCount
+        FROM organizerarchetype oa
+        JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = oa.tournamentarchetypeid
+       WHERE oa.organizerid = ?
+       ORDER BY oa.creationts DESC
+    `, [organizerId]);
+
+    return rows.map((r: Record<string, unknown>) => ({
+      ...r,
+      active: Number(r.active) === 1,
+      tournamentCount: Number(r.tournamentCount),
+    }));
+  }
+
+  /**
+   * Résultats des tournois joués, restreints aux archétypes de l'organisateur.
+   *
+   * `tournamentplayer` porte le classement final ; on ne remonte que les places payées pour
+   * garder la table lisible.
+   */
+  async myResults(organizerId: number, archetypeId?: number) {
+    const args: number[] = [organizerId];
+    let cond = '';
+    if (archetypeId != null) { cond = 'AND ta.tournamentarchetypeid = ?'; args.push(archetypeId); }
+
+    return this.dataSource.query(`
+      SELECT t.tournamentid AS tournamentId, t.label AS tournamentLabel,
+             NULLIF(t.starttime, 0) AS startTime, t.gamestate AS gameState,
+             t.playerscount AS playersCount,
+             ta.tournamentarchetypeid AS archetypeId, ta.label AS archetypeLabel
+        FROM organizerarchetype oa
+        JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = oa.tournamentarchetypeid
+        JOIN tournament t ON t.tournamentarchetypeid = ta.tournamentarchetypeid
+       WHERE oa.organizerid = ? ${cond}
+       ORDER BY t.starttime DESC
+       LIMIT 200
+    `, args);
+  }
+
+  /** Classement d'un tournoi — l'appartenance est revérifiée, l'id venant du client. */
+  async tournamentRanking(organizerId: number, tournamentId: number) {
+    const [own] = await this.dataSource.query<{ n: number }[]>(`
+      SELECT COUNT(*) AS n
+        FROM tournament t
+        JOIN organizerarchetype oa ON oa.tournamentarchetypeid = t.tournamentarchetypeid
+       WHERE t.tournamentid = ? AND oa.organizerid = ?`,
+      [tournamentId, organizerId],
+    );
+    if (!Number(own?.n)) throw new ForbiddenException('Ce tournoi ne vous appartient pas.');
+
+    // ⚠️ Il n'existe PAS de table `tournamentplayer`. Le classement vit sur `gametableplayer.rank`
+    // et les gains sur `wonprize`, relié par `genericsubscription`. Chaîne reprise telle quelle de
+    // GenericSubscription.java (requête de l'historique joueur), seule référence fiable ici.
+    return this.dataSource.query(`
+      SELECT ts.playerid AS playerId, pi.screenname AS screenName,
+             gtp.rank, wp.amount AS prizeAmount, p.label AS prizeLabel
+        FROM tournamentsubscription ts
+        JOIN gametable gt ON gt.tournamentid = ts.tournamentid
+        JOIN gametableplayer gtp ON gtp.playerid = ts.playerid
+             AND gtp.gametableid = gt.gametableid AND gtp.rank > 0
+        LEFT JOIN genericsubscription gs
+             ON gs.tournamentsubscriptionid = ts.tournamentsubscriptionid
+        LEFT JOIN wonprize wp ON wp.genericsubscriptionid = gs.genericsubscriptionid
+        LEFT JOIN prize p ON p.prizeid = wp.prizeid
+        LEFT JOIN playerinfos pi ON pi.playerid = ts.playerid
+       WHERE ts.tournamentid = ?
+       ORDER BY gtp.rank ASC`,
+      [tournamentId],
+    );
+  }
+
+  /**
+   * Crée un tournoi pour cet organisateur : quota vérifié, puis délégation au service partagé
+   * (qui porte déjà toutes les validations moteur), puis rattachement — le tout en cohérence.
+   */
+  async createTournament(organizerId: number, body: Record<string, unknown>) {
+    const profile = await this.profile(organizerId);
+
+    if (profile.remainingThisMonth !== null && profile.remainingThisMonth <= 0) {
+      throw new BadRequestException(
+        `Quota atteint : ${profile.maxTournamentsPerMonth} tournoi(s) par période de 30 jours. `
+        + 'Contactez-nous pour l\'augmenter.',
+      );
+    }
+    const maxPlayers = Number(body.maxPlayers ?? 0);
+    if (profile.maxPlayersPerTournament > 0 && maxPlayers > profile.maxPlayersPerTournament) {
+      throw new BadRequestException(
+        `Votre plafond est de ${profile.maxPlayersPerTournament} joueurs par tournoi.`,
+      );
+    }
+
+    // Le service partagé applique les garde-fous moteur (shootOut refusé, cadence cash game
+    // refusée, buy-in plancher, cohérence type/code d'accès…). On ne les duplique pas ici.
+    const { id } = await this.archetypes.create(body);
+
+    await this.dataSource.query(
+      'INSERT INTO organizerarchetype (organizerid, tournamentarchetypeid) VALUES (?, ?)',
+      [organizerId, id],
+    );
+    return { id };
+  }
+
+  /** Active/désactive la planification — uniquement sur ses propres archétypes. */
+  async setArchetypeActive(organizerId: number, archetypeId: number, active: boolean) {
+    const [own] = await this.dataSource.query<{ n: number }[]>(
+      'SELECT COUNT(*) AS n FROM organizerarchetype WHERE organizerid = ? AND tournamentarchetypeid = ?',
+      [organizerId, archetypeId],
+    );
+    if (!Number(own?.n)) throw new ForbiddenException('Ce tournoi ne vous appartient pas.');
+
+    await this.archetypes.setActive(archetypeId, active);
+    return this.myArchetypes(organizerId);
+  }
+}

@@ -79,7 +79,10 @@ export class AuthGuard implements CanActivate {
           if (requiredRoles.length && !requiredRoles.includes(payload.role)) {
             forbiddenRole = true; // JWT valide mais rôle insuffisant
           } else {
-            req.user = { kind: 'admin', adminId: payload.sub, email: payload.email, role: payload.role };
+            req.user = {
+              kind: 'admin', adminId: payload.sub, email: payload.email, role: payload.role,
+              organizerId: payload.organizerId,
+            };
           }
         }
       }

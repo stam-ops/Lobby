@@ -21,7 +21,7 @@ export const PUBLIC_KEY = 'auth:public';
  * Tout rôle EXTERNE ajouté ici (organisateurs, clubs…) doit être explicitement autorisé route par
  * route via @Roles : il est refusé partout ailleurs par DEFAULT_BACKOFFICE_ROLES.
  */
-export type AdminRole = 'admin' | 'support';
+export type AdminRole = 'admin' | 'support' | 'club';
 
 /**
  * Rôles admis quand une route ne précise pas de @Roles.
@@ -47,6 +47,8 @@ export interface AuthUser {
   adminId?: number;
   email?: string;
   role?: AdminRole;
+  /** Renseigné pour role === 'club' : périmètre de données de l'organisateur. */
+  organizerId?: number;
 }
 
 /** Payload du JWT admin. */
@@ -54,4 +56,11 @@ export interface AdminJwtPayload {
   sub: number;      // backofficeuserid
   email: string;
   role: AdminRole;
+  /**
+   * Périmètre de l'organisateur, porté par le jeton pour éviter une lecture en base à chaque
+   * requête. Conséquence à connaître : un changement de rattachement n'est pris en compte qu'à la
+   * reconnexion. C'est acceptable — le rattachement ne change pas, et suspendre un organisateur
+   * passe par `active`, qui est relu à chaque login.
+   */
+  organizerId?: number;
 }

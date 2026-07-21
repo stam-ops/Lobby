@@ -19,9 +19,13 @@ export class BackofficeUserEntity {
   @Column({ nullable: true })
   lastname: string;
 
-  /** 'admin' | 'support' */
+  /** 'admin' | 'support' | 'club' */
   @Column({ default: 'support' })
   role: string;
+
+  /** Organisateur rattaché — NULL pour le personnel interne. */
+  @Column({ nullable: true })
+  organizerid: number | null;
 
   @Column({ default: 1 })
   active: number;

@@ -24,10 +24,20 @@ export class AdminAuthService {
 
     await this.users.update(user.backofficeuserid, { lastlogints: new Date() });
 
+    const role = user.role as AdminRole;
+
+    // Un compte 'club' sans organisateur rattaché n'a aucun périmètre de données : plutôt que de
+    // laisser passer un jeton qui ferait échouer chaque requête plus loin (ou pire, en ferait
+    // passer une non filtrée), on refuse la connexion ici.
+    if (role === 'club' && !user.organizerid) {
+      throw new UnauthorizedException('Compte organisateur incomplet — contactez le support.');
+    }
+
     const payload: AdminJwtPayload = {
       sub: user.backofficeuserid,
       email: user.email,
-      role: user.role as AdminRole,
+      role,
+      ...(user.organizerid ? { organizerId: user.organizerid } : {}),
     };
     const accessToken = await this.jwt.signAsync(payload);
 
@@ -39,6 +49,7 @@ export class AdminAuthService {
         firstname: user.firstname,
         lastname: user.lastname,
         role: user.role,
+        organizerId: user.organizerid ?? null,
       },
     };
   }
