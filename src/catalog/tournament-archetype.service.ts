@@ -32,12 +32,34 @@ export interface LookupOption { id: number; label: string }
 /** Cadence : on expose la durée brute d'un niveau, l'UI en déduit des repères en minutes. */
 export interface GameTimeOption extends LookupOption { levelTimeMs: number }
 
+/** Structure de prix : la plage de joueurs conditionne le versement effectif des gains. */
+export interface PrizeStructureOption extends LookupOption {
+  minPlayers: number | null;
+  maxPlayers: number | null;
+  firstPrize: number | null;
+  /** Somme versée si tous les rangs payés sont atteints (une tranche 4–6 à 200 compte 600). */
+  totalPrize: number;
+}
+
 export interface ArchetypeLookups {
   blindStructures: LookupOption[];
-  prizeStructures: LookupOption[];
+  prizeStructures: PrizeStructureOption[];
   gameTimes: GameTimeOption[];
   clubs: LookupOption[];
+  /** Structure imposée aux tournois gratuits (cf. FREE_PRIZE_STRUCTURE_ID). */
+  freePrizeStructureId: number;
 }
+
+/**
+ * Dotation des tournois GRATUITS (buy-in 0), où la génération automatique ne s'applique pas.
+ *
+ * ⚠️ Cet identifiant n'existe dans AUCUN seed : il a été créé dans la base d'exploitation (les
+ * structures auto-générées par ServersManager.setArchPrizeStructure s'y ajoutent au fil de l'eau).
+ * Il est donc surchargeable par environnement plutôt que codé en dur côté UI — sur une base où il
+ * n'existe pas, le menu se retrouverait vide et la création serait bloquée, au lieu de proposer
+ * silencieusement une dotation inadaptée.
+ */
+const FREE_PRIZE_STRUCTURE_ID = Number(process.env.FREE_PRIZE_STRUCTURE_ID ?? 46);
 
 /**
  * Création / édition des archétypes de tournoi (table tournamentarchetype).
@@ -55,6 +77,13 @@ export interface ArchetypeLookups {
  *   - daysOfWeek   : "1,2@21:00" (1 = lundi … 7 = dimanche), heure Europe/Paris.
  *   - daysOfMonth  : "1,15@20:30" (jours du mois), heure Europe/Paris.
  */
+/**
+ * Buy-in plancher pour la génération automatique de dotation. En dessous, `buyInMinusRake`
+ * (= buyIn * (100 - rake) / 100, division ENTIÈRE) tombe à des montants dérisoires voire nuls.
+ * Un tournoi gratuit passe par 0 + structure de prix fixe.
+ */
+const MIN_BUY_IN = 100;
+
 /** Fuseau de planification, identique à ServersManager (`TimeZone.getTimeZone("Europe/Paris")`). */
 const SCHEDULE_TZ = 'Europe/Paris';
 
@@ -139,6 +168,67 @@ function gameTimeLabel(levelTimeMs: number, actionTimeMs: number): string {
   return named ? `${named} — ${cadence} / ${action}` : `${cadence} / ${action}`;
 }
 
+interface PrizeRankRow {
+  id: number; lo: number | null; hi: number | null;
+  minRank: number | null; maxRank: number | null; amount: number | null;
+}
+
+/**
+ * Agrège les tranches de rangs d'une structure de prix en un libellé lisible et une dotation totale.
+ *
+ * La dotation totale compte chaque rang de la tranche : une tranche 4–6 à 200 vaut 600. C'est la
+ * somme réellement versée si le tournoi atteint le rang le plus bas payé — au-delà du nombre de
+ * joueurs présents, les rangs inexistants ne sont simplement pas attribués.
+ */
+function buildPrizeStructureOptions(rows: PrizeRankRow[]): PrizeStructureOption[] {
+  const byId = new Map<number, PrizeRankRow[]>();
+  for (const r of rows) {
+    const id = Number(r.id);
+    if (!byId.has(id)) byId.set(id, []);
+    byId.get(id)!.push(r);
+  }
+
+  return [...byId.entries()].map(([id, rs]) => {
+    const los = rs.map((r) => r.lo).filter((v): v is number => v != null).map(Number);
+    const his = rs.map((r) => r.hi).filter((v): v is number => v != null).map(Number);
+    const lo = los.length ? Math.min(...los) : null;
+    const hi = his.length ? Math.max(...his) : null;
+
+    const ranks = rs.filter((r) => r.minRank != null && r.amount != null);
+    const total = ranks.reduce(
+      (sum, r) => sum + (Number(r.maxRank) - Number(r.minRank) + 1) * Number(r.amount), 0,
+    );
+    const first = ranks.find((r) => Number(r.minRank) === 1);
+
+    const players = lo == null ? 'plage inconnue'
+      : lo === hi ? `${lo} joueur${lo > 1 ? 's' : ''} exactement`
+        : `${lo} à ${hi} joueurs`;
+
+    const breakdown = ranks
+      .sort((a, b) => Number(a.minRank) - Number(b.minRank))
+      .map((r) => {
+        const rank = Number(r.minRank) === Number(r.maxRank)
+          ? `${r.minRank}${Number(r.minRank) === 1 ? 'er' : 'e'}`
+          : `${r.minRank}–${r.maxRank}`;
+        return `${rank} : ${Number(r.amount).toLocaleString('fr-FR')}`;
+      })
+      .join(' · ');
+
+    const head = ranks.length
+      ? `${ranks.length} rang${ranks.length > 1 ? 's' : ''} payé${ranks.length > 1 ? 's' : ''}, total ${total.toLocaleString('fr-FR')}`
+      : 'aucun rang payé';
+
+    return {
+      id,
+      label: `#${id} — ${head} — ${players}${breakdown ? ` (${breakdown})` : ''}`,
+      minPlayers: lo,
+      maxPlayers: hi,
+      firstPrize: first ? Number(first.amount) : null,
+      totalPrize: total,
+    };
+  }).sort((a, b) => a.id - b.id);
+}
+
 @Injectable()
 export class TournamentArchetypeService {
   constructor(private readonly dataSource: DataSource) {}
@@ -200,10 +290,26 @@ export class TournamentArchetypeService {
       this.dataSource.query<{ id: number; label: string }[]>(
         'SELECT blindstructureid AS id, label FROM blindstructure ORDER BY label',
       ),
-      // prizestructure n'a pas de libellé : on compose à partir de son type.
-      this.dataSource.query<{ id: number; type: number }[]>(
-        'SELECT prizestructureid AS id, type FROM prizestructure ORDER BY prizestructureid',
-      ),
+      // prizestructure n'a pas de libellé : on le compose à partir du 1er prix et de la plage de
+      // joueurs RÉELLEMENT couverte. Cette plage est déterminante : PrizeStructure
+      // .getCurrentSubstructureForTournament filtre sur
+      // `minplayerscount <= GREATEST(playerscount, minplayers) <= maxplayerscount`, donc une
+      // structure hors plage ne distribue AUCUN prix (on l'affiche pour éviter le piège).
+      // Une ligne par tranche de rangs : le regroupement se fait en JS pour pouvoir reconstituer
+      // la répartition complète (1er, 2e, 4–6…) et la dotation totale, pas seulement le 1er prix.
+      this.dataSource.query<{
+        id: number; lo: number | null; hi: number | null;
+        minRank: number | null; maxRank: number | null; amount: number | null;
+      }[]>(`
+        SELECT ps.prizestructureid AS id,
+               pss.minplayerscount AS lo, pss.maxplayerscount AS hi,
+               pssrr.minrank AS minRank, pssrr.maxrank AS maxRank, p.amount
+        FROM prizestructure ps
+        LEFT JOIN prizesubstructure pss ON pss.prizestructureid = ps.prizestructureid
+        LEFT JOIN prizesubstructurerankrange pssrr ON pssrr.prizesubstructureid = pss.prizesubstructureid
+        LEFT JOIN prize p ON p.prizeid = pssrr.prizeid
+        ORDER BY ps.prizestructureid, pss.minplayerscount, pssrr.minrank
+      `),
       // `leveltime = 0` = entrée cash game (les blindes ne montent pas). Elle est ÉCARTÉE ici :
       // TournamentServer.checkLateSubscriptionsEnd divise par `infos.levelTime`, donc un tournoi
       // configuré dessus lèverait une ArithmeticException (/ by zero) à chaque tick.
@@ -217,13 +323,14 @@ export class TournamentArchetypeService {
 
     return {
       blindStructures: blind.map((b) => ({ id: Number(b.id), label: b.label || `#${b.id}` })),
-      prizeStructures: prize.map((p) => ({ id: Number(p.id), label: `#${p.id} (type ${p.type})` })),
+      prizeStructures: buildPrizeStructureOptions(prize),
       gameTimes: time.map((g) => ({
         id: Number(g.id),
         label: gameTimeLabel(Number(g.leveltime), Number(g.actiontime)),
         levelTimeMs: Number(g.leveltime),
       })),
       clubs: (clubs as { id: number; label: string }[]).map((c) => ({ id: Number(c.id), label: c.label || `#${c.id}` })),
+      freePrizeStructureId: FREE_PRIZE_STRUCTURE_ID,
     };
   }
 
@@ -375,6 +482,56 @@ export class TournamentArchetypeService {
       );
     }
 
+    // Buy-in ↔ structure de prix : ServersManager ne génère une structure que si `prizestructureid`
+    // est NULL, et le calcul part de `buyInMinusRake = buyIn * (100 - rake) / 100`. Avec un buy-in
+    // nul (ou trop faible) la dotation générée est nulle : le tournoi tourne sans prix. Un tournoi
+    // gratuit doit donc pointer une structure FIXE, choisie explicitement.
+    const buyIn = num(body.buyIn);
+    const prizeStructureId = body.prizeStructureId ? num(body.prizeStructureId) : null;
+    if (buyIn === 0 && prizeStructureId == null) {
+      throw new BadRequestException(
+        'Un tournoi gratuit (buy-in 0) exige une structure de prix fixe : la génération automatique '
+        + 'partirait d\'une dotation nulle.',
+      );
+    }
+    if (buyIn === 0 && prizeStructureId !== FREE_PRIZE_STRUCTURE_ID) {
+      throw new BadRequestException(
+        `Un tournoi gratuit doit utiliser la structure de prix ${FREE_PRIZE_STRUCTURE_ID} `
+        + `(reçu : ${prizeStructureId}).`,
+      );
+    }
+    if (buyIn > 0 && buyIn < MIN_BUY_IN) {
+      throw new BadRequestException(
+        `Buy-in trop faible : ${MIN_BUY_IN} minimum, sinon la dotation générée s'effondre à zéro `
+        + 'après déduction du rake. Utiliser 0 avec une structure de prix fixe pour un tournoi gratuit.',
+      );
+    }
+
+    // Une structure fixe ne verse des prix que si le nombre de joueurs tombe dans sa plage
+    // (`minplayerscount <= GREATEST(playerscount, minplayers) <= maxplayerscount`). Hors plage, le
+    // tournoi se joue et ne paie personne — on refuse la config plutôt que de la laisser passer.
+    if (prizeStructureId != null) {
+      const [ps] = await this.dataSource.query<{ lo: number | null; hi: number | null }[]>(
+        `SELECT MIN(minplayerscount) AS lo, MAX(maxplayerscount) AS hi
+           FROM prizesubstructure WHERE prizestructureid = ?`,
+        [prizeStructureId],
+      );
+      if (!ps || ps.lo == null) {
+        throw new BadRequestException(
+          `Structure de prix ${prizeStructureId} sans sous-structure : elle ne verserait aucun gain.`,
+        );
+      }
+      const lo = Number(ps.lo); const hi = Number(ps.hi);
+      // Le serveur évalue GREATEST(playerscount, minplayers) : la borne basse est donc minPlayers,
+      // et la table peut monter jusqu'à maxPlayers.
+      if (minPlayers > hi || maxPlayers < lo) {
+        throw new BadRequestException(
+          `Structure de prix ${prizeStructureId} prévue pour ${lo}–${hi} joueurs, incompatible avec `
+          + `${minPlayers}–${maxPlayers} : aucun gain ne serait versé.`,
+        );
+      }
+    }
+
     const active = body.active === undefined ? true : !!body.active;
 
     const res = await this.dataSource.query(
@@ -391,10 +548,10 @@ export class TournamentArchetypeService {
         startType, periodType, periodData,
         // FROM_UNIXTIME(NULL) = NULL : instant absolu, insensible au fuseau de session MySQL.
         periodStartEpoch, subscriptionMinutes,
-        structureType, num(body.buyIn), addonBreakIndex,
+        structureType, buyIn, addonBreakIndex,
         num(body.lastLateRegisterLevel), num(body.moneyType, 1), num(body.gameType), num(body.limitType),
         blindStructureId,
-        body.prizeStructureId ? num(body.prizeStructureId) : null,
+        prizeStructureId,
         num(body.initStack), gameTimeId, hasVideo,
         active ? 0 : 1, // ⚠️ inversé : 0 = actif
         type, minLevel,
