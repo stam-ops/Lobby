@@ -38,8 +38,17 @@ export class OrganizerSpaceController {
   }
 
   @Post('tournaments')
-  @ApiOperation({ summary: 'Créer un tournoi (quota vérifié)' })
-  create(@OrganizerId() organizerId: number, @Body() body: Record<string, unknown>) {
+  @ApiOperation({
+    summary: 'Créer un tournoi (quota vérifié ; réglages moteur imposés côté serveur)',
+  })
+  create(
+    @OrganizerId() organizerId: number,
+    @Body() body: {
+      label?: string; startAt?: string; maxPlayers?: number;
+      accessCode?: string; buyIn?: number; cadence?: string;
+    },
+  ) {
+    // Corps volontairement étroit : tout champ moteur envoyé en plus est ignoré, faute d'être lu.
     return this.space.createTournament(organizerId, body);
   }
 

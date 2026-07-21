@@ -59,7 +59,7 @@ export interface ArchetypeLookups {
  * n'existe pas, le menu se retrouverait vide et la création serait bloquée, au lieu de proposer
  * silencieusement une dotation inadaptée.
  */
-const FREE_PRIZE_STRUCTURE_ID = Number(process.env.FREE_PRIZE_STRUCTURE_ID ?? 46);
+export const FREE_PRIZE_STRUCTURE_ID = Number(process.env.FREE_PRIZE_STRUCTURE_ID ?? 46);
 
 /**
  * Création / édition des archétypes de tournoi (table tournamentarchetype).

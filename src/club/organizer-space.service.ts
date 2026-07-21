@@ -1,6 +1,8 @@
 import { BadRequestException, ForbiddenException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
-import { TournamentArchetypeService } from '../catalog/tournament-archetype.service';
+import {
+  FREE_PRIZE_STRUCTURE_ID, TournamentArchetypeService,
+} from '../catalog/tournament-archetype.service';
 
 export interface OrganizerProfile {
   organizerId: number;
@@ -141,34 +143,97 @@ export class OrganizerSpaceService {
   }
 
   /**
-   * Crée un tournoi pour cet organisateur : quota vérifié, puis délégation au service partagé
-   * (qui porte déjà toutes les validations moteur), puis rattachement — le tout en cohérence.
+   * Crée un tournoi pour cet organisateur.
+   *
+   * L'organisateur ne fournit QUE les champs métier (nom, date, joueurs, code, buy-in) : tous les
+   * réglages moteur sont complétés ici avec des valeurs sûres. Ce n'est pas de la commodité —
+   * exposer `structureType`, `hasVideo` ou `gameTimeId` à un utilisateur externe lui donnerait les
+   * moyens de créer un tournoi qui ne se lance jamais, voire qui fait planter TournamentServer.
+   *
+   * Les tournois d'organisateur sont TOUJOURS privés par code d'accès (type 4) : c'est le seul
+   * mécanisme de confidentialité utilisable ici, `clubid` dépendant de tables absentes.
    */
-  async createTournament(organizerId: number, body: Record<string, unknown>) {
+  async createTournament(organizerId: number, input: {
+    label?: string; startAt?: string; maxPlayers?: number;
+    accessCode?: string; buyIn?: number; cadence?: string;
+  }) {
     const profile = await this.profile(organizerId);
 
     if (profile.remainingThisMonth !== null && profile.remainingThisMonth <= 0) {
       throw new BadRequestException(
         `Quota atteint : ${profile.maxTournamentsPerMonth} tournoi(s) par période de 30 jours. `
-        + 'Contactez-nous pour l\'augmenter.',
+        + "Contactez-nous pour l'augmenter.",
       );
     }
-    const maxPlayers = Number(body.maxPlayers ?? 0);
+    const maxPlayers = Number(input.maxPlayers ?? 0);
+    if (maxPlayers < 2) throw new BadRequestException('Indiquez au moins 2 joueurs.');
     if (profile.maxPlayersPerTournament > 0 && maxPlayers > profile.maxPlayersPerTournament) {
       throw new BadRequestException(
         `Votre plafond est de ${profile.maxPlayersPerTournament} joueurs par tournoi.`,
       );
     }
 
-    // Le service partagé applique les garde-fous moteur (shootOut refusé, cadence cash game
-    // refusée, buy-in plancher, cohérence type/code d'accès…). On ne les duplique pas ici.
-    const { id } = await this.archetypes.create(body);
+    const buyIn = Number(input.buyIn ?? 0);
+    const gameTimeId = await this.resolveGameTimeId(input.cadence ?? 'normal');
+    const blindStructureId = await this.resolveBlindStructureId();
+
+    // Délégation au service partagé : il porte les garde-fous moteur (shootOut refusé, cadence
+    // cash game refusée, buy-in plancher, cohérence type/code…). Les dupliquer ici garantirait
+    // qu'ils divergent un jour.
+    const { id } = await this.archetypes.create({
+      label: input.label,
+      description: `Tournoi de ${profile.name}`,
+      type: 4,                       // privé par code d'accès
+      accessCode: input.accessCode,
+      periodType: 1,                 // une seule fois : un évènement d'association
+      periodStart: input.startAt,
+      subscriptionMinutes: 60,
+      minPlayers: 2,
+      maxPlayers,
+      tableSize: 9,
+      buyIn,
+      // Gratuit → dotation fixe imposée (la génération automatique partirait de zéro).
+      // Payant → null, ServersManager génère la structure au premier passage.
+      prizeStructureId: buyIn === 0 ? FREE_PRIZE_STRUCTURE_ID : null,
+      initStack: 5000,
+      gameTimeId,
+      blindStructureId,
+      addonBreakIndex: 0,
+      lastLateRegisterLevel: 3,
+      minLevel: 0,
+      active: true,
+    });
 
     await this.dataSource.query(
       'INSERT INTO organizerarchetype (organizerid, tournamentarchetypeid) VALUES (?, ?)',
       [organizerId, id],
     );
     return { id };
+  }
+
+  /** Cadence choisie par libellé, jamais par identifiant : les ids varient selon l'environnement. */
+  private async resolveGameTimeId(cadence: string): Promise<number> {
+    const targetMs = cadence === 'turbo' ? 90000 : cadence === 'lent' ? 600000 : 300000;
+    const [exact] = await this.dataSource.query<{ id: number }[]>(
+      'SELECT gametimeid AS id FROM gametime WHERE leveltime = ? LIMIT 1', [targetMs],
+    );
+    if (exact) return Number(exact.id);
+    // Repli : la cadence la plus proche parmi celles utilisables en tournoi (leveltime > 0).
+    const [closest] = await this.dataSource.query<{ id: number }[]>(
+      'SELECT gametimeid AS id FROM gametime WHERE leveltime > 0 ORDER BY ABS(leveltime - ?) LIMIT 1',
+      [targetMs],
+    );
+    if (!closest) throw new BadRequestException('Aucune cadence de jeu configurée.');
+    return Number(closest.id);
+  }
+
+  private async resolveBlindStructureId(): Promise<number> {
+    const [row] = await this.dataSource.query<{ id: number }[]>(
+      `SELECT blindstructureid AS id FROM blindstructure
+        ORDER BY (label LIKE '%SNG%') DESC, blindstructureid ASC LIMIT 1`,
+    );
+    if (!row) throw new BadRequestException('Aucune structure de blindes configurée.');
+    return Number(row.id);
   }
 
   /** Active/désactive la planification — uniquement sur ses propres archétypes. */
