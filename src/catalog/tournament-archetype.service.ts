@@ -29,10 +29,13 @@ export const TOURNAMENT_ARCH_TYPE = {
 
 export interface LookupOption { id: number; label: string }
 
+/** Cadence : on expose la durée brute d'un niveau, l'UI en déduit des repères en minutes. */
+export interface GameTimeOption extends LookupOption { levelTimeMs: number }
+
 export interface ArchetypeLookups {
   blindStructures: LookupOption[];
   prizeStructures: LookupOption[];
-  gameTimes: LookupOption[];
+  gameTimes: GameTimeOption[];
   clubs: LookupOption[];
 }
 
@@ -109,6 +112,33 @@ function epochSecondsToParisWallClock(epochSeconds: number): string {
   return `${p.year}-${p.month}-${p.day}T${p.hour}:${p.minute}:${p.second}`;
 }
 
+/** Durée en ms → « 1 min 30 », « 5 min », « 30 s ». */
+function fmtDuration(ms: number): string {
+  const s = Math.round(ms / 1000);
+  if (s < 60) return `${s} s`;
+  const m = Math.floor(s / 60);
+  const rest = s % 60;
+  return rest ? `${m} min ${rest}` : `${m} min`;
+}
+
+/**
+ * Libellé d'une cadence de jeu.
+ *
+ * ⚠️ Nommé d'après la DURÉE d'un niveau, PAS d'après `gametimeid` : les identifiants ne sont pas
+ * stables d'un environnement à l'autre (maindb-init-fbapp.sql crée 3/6/8/10 min sur les mêmes ids
+ * 1-4 que seed-maindb.sql, qui crée 10 min / cash game / 1 min 30 / 5 min). Un mapping par id
+ * afficherait donc « Turbo » sur une cadence lente selon la base.
+ */
+function gameTimeLabel(levelTimeMs: number, actionTimeMs: number): string {
+  const named = levelTimeMs === 90000 ? 'Turbo'
+    : levelTimeMs === 300000 ? 'Normal'
+      : levelTimeMs === 600000 ? 'Lent'
+        : null;
+  const cadence = `niveau ${fmtDuration(levelTimeMs)}`;
+  const action = `action ${fmtDuration(actionTimeMs)}`;
+  return named ? `${named} — ${cadence} / ${action}` : `${cadence} / ${action}`;
+}
+
 @Injectable()
 export class TournamentArchetypeService {
   constructor(private readonly dataSource: DataSource) {}
@@ -174,8 +204,11 @@ export class TournamentArchetypeService {
       this.dataSource.query<{ id: number; type: number }[]>(
         'SELECT prizestructureid AS id, type FROM prizestructure ORDER BY prizestructureid',
       ),
+      // `leveltime = 0` = entrée cash game (les blindes ne montent pas). Elle est ÉCARTÉE ici :
+      // TournamentServer.checkLateSubscriptionsEnd divise par `infos.levelTime`, donc un tournoi
+      // configuré dessus lèverait une ArithmeticException (/ by zero) à chaque tick.
       this.dataSource.query<{ id: number; leveltime: number; actiontime: number }[]>(
-        'SELECT gametimeid AS id, leveltime, actiontime FROM gametime ORDER BY gametimeid',
+        'SELECT gametimeid AS id, leveltime, actiontime FROM gametime WHERE leveltime > 0 ORDER BY leveltime DESC',
       ),
       this.dataSource.query<{ id: number; label: string }[]>(
         'SELECT clubid AS id, name AS label FROM club ORDER BY name',
@@ -187,7 +220,8 @@ export class TournamentArchetypeService {
       prizeStructures: prize.map((p) => ({ id: Number(p.id), label: `#${p.id} (type ${p.type})` })),
       gameTimes: time.map((g) => ({
         id: Number(g.id),
-        label: `#${g.id} — niveau ${Math.round(Number(g.leveltime) / 1000)}s / action ${Math.round(Number(g.actiontime) / 1000)}s`,
+        label: gameTimeLabel(Number(g.leveltime), Number(g.actiontime)),
+        levelTimeMs: Number(g.leveltime),
       })),
       clubs: (clubs as { id: number; label: string }[]).map((c) => ({ id: Number(c.id), label: c.label || `#${c.id}` })),
     };
@@ -252,6 +286,21 @@ export class TournamentArchetypeService {
     const gameTimeId = num(body.gameTimeId);
     if (!blindStructureId) throw new BadRequestException('Structure de blindes requise');
     if (!gameTimeId) throw new BadRequestException('Game time requis');
+
+    // Un gametime à `leveltime = 0` est une entrée CASH GAME : TournamentServer divise par
+    // `infos.levelTime` pour calculer le niveau courant, donc le thread du tournoi lèverait une
+    // ArithmeticException à chaque tick. On le refuse plutôt que de laisser créer un tournoi mortel.
+    const [gt] = await this.dataSource.query<{ leveltime: number }[]>(
+      'SELECT leveltime FROM gametime WHERE gametimeid = ?',
+      [gameTimeId],
+    );
+    if (!gt) throw new BadRequestException(`Game time ${gameTimeId} introuvable`);
+    if (Number(gt.leveltime) <= 0) {
+      throw new BadRequestException(
+        `Game time ${gameTimeId} a une durée de niveau nulle (entrée cash game) : inutilisable pour `
+        + 'un tournoi, TournamentServer planterait sur une division par zéro.',
+      );
+    }
 
     // periodstart : requis pour oneTime / everyXMinutes / everyDay (point de départ du calcul).
     // On interprète l'heure saisie en Europe/Paris (comme ServersManager) et on stocke l'instant
