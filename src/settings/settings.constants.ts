@@ -100,15 +100,8 @@ export const CONFIG_PAGES: Record<string, ConfigPage> = {
   },
 
   [CC]: {
-    label: 'Coûts (Cam\'s) & bonus quotidiens',
+    label: 'Coûts (Cam\'s) & bonus',
     groups: [
-      {
-        title: 'Bonus quotidiens',
-        fields: [
-          { table: CC, name: 'vipdailybonus', type: 'number', note: 'bonus quotidien VIP' },
-          { table: CC, name: 'novipdailybonus', type: 'number', note: 'bonus quotidien non-VIP' },
-        ],
-      },
       {
         title: 'Coûts en Cam\'s',
         fields: [
