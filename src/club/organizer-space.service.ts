@@ -215,14 +215,17 @@ export class OrganizerSpaceService {
     const rows = await this.dataSource.query(`
       SELECT perPlayer.playerId,
              pi.screenname AS screenName,
-             COUNT(*)                                        AS tournaments,
-             SUM(cnt.nb - perPlayer.rank + 1)                AS points,
-             SUM(CASE WHEN perPlayer.rank = 1 THEN 1 ELSE 0 END) AS wins,
-             MIN(perPlayer.rank)                             AS bestRank
+             COUNT(*)                                             AS tournaments,
+             SUM(cnt.nb - perPlayer.finalRank + 1)                AS points,
+             SUM(CASE WHEN perPlayer.finalRank = 1 THEN 1 ELSE 0 END) AS wins,
+             MIN(perPlayer.finalRank)                             AS bestRank
         FROM (
               -- Une seule ligne par (tournoi, joueur) : neutralise les changements de table.
+              -- /!\ L'alias ne peut PAS s'appeler "rank" : mot réservé depuis MySQL 8 (fonction
+              -- de fenêtrage RANK()), la requête serait rejetée à l'analyse. La référence
+              -- qualifiée gtp.rank, elle, reste valide.
               SELECT t.tournamentid AS tournamentId, ts.playerid AS playerId,
-                     MIN(gtp.rank) AS rank
+                     MIN(gtp.rank) AS finalRank
                 FROM organizerarchetype oa
                 JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = oa.tournamentarchetypeid
                 JOIN tournament t  ON t.tournamentarchetypeid = ta.tournamentarchetypeid
