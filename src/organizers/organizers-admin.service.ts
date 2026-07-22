@@ -5,6 +5,8 @@ import { OrganizerSignupService } from './organizer-signup.service';
 export interface OrganizerAdminRow {
   organizerId: number;
   name: string;
+  /** Évènements annoncés par le demandeur — base de la décision de validation. */
+  description: string | null;
   contactEmail: string;
   emailVerifiedTs: string | null;
   active: boolean;
@@ -48,7 +50,7 @@ export class OrganizersAdminService {
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
     const rows = await this.dataSource.query(`
-      SELECT o.organizerid AS organizerId, o.name, o.contactemail AS contactEmail,
+      SELECT o.organizerid AS organizerId, o.name, o.description, o.contactemail AS contactEmail,
              o.emailverifiedts AS emailVerifiedTs, o.active, o.creationts AS creationTs,
              o.maxtournamentspermonth AS maxTournamentsPerMonth,
              o.maxplayerspertournament AS maxPlayersPerTournament,

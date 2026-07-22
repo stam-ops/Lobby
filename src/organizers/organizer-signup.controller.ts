@@ -33,7 +33,9 @@ export class OrganizerSignupController {
     if (!(await this.captcha.verify(body.captchaToken, ip))) {
       throw new BadRequestException('Vérification anti-robot échouée. Merci de réessayer.');
     }
-    await this.signup.signup(body.organizationName, body.email, body.password);
+    await this.signup.signup(
+      body.organizationName, body.email, body.password, body.description ?? '',
+    );
     // Réponse identique que l'adresse ait été retenue ou déjà connue — pas d'énumération.
     return {
       message: 'Si cette adresse est disponible, un e-mail de confirmation vient de vous être envoyé.',

@@ -10,6 +10,12 @@ export class OrganizerSignupDto {
   @ApiProperty({ description: '10 caractères minimum' })
   password: string;
 
+  @ApiProperty({
+    required: false,
+    description: "Évènements prévus — lu par l'administrateur pour statuer sur le dossier",
+  })
+  description?: string;
+
   @ApiProperty({ required: false, description: 'Jeton Turnstile/hCaptcha du formulaire' })
   captchaToken?: string;
 }

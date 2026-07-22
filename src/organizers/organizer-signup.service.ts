@@ -54,9 +54,12 @@ export class OrganizerSignupService {
    * Retourne TOUJOURS le même message, que l'adresse soit déjà prise ou non : une réponse
    * différenciée permettrait d'énumérer les organisateurs inscrits.
    */
-  async signup(organizationName: string, email: string, password: string): Promise<void> {
+  async signup(
+    organizationName: string, email: string, password: string, description = '',
+  ): Promise<void> {
     const name = organizationName.trim();
     const mail = email.trim().toLowerCase();
+    const desc = description.trim().slice(0, 2000);
     if (!name) throw new BadRequestException("Le nom de l'organisation est requis");
     if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(mail)) throw new BadRequestException('Adresse e-mail invalide');
     if (password.length < 10) {
@@ -81,8 +84,8 @@ export class OrganizerSignupService {
     // file de validation ne saurait pas présenter.
     const organizerId = await this.dataSource.transaction(async (tx) => {
       const res = await tx.query(
-        'INSERT INTO organizer (name, contactemail, active) VALUES (?, ?, 0)',
-        [name.slice(0, 200), mail.slice(0, 255)],
+        'INSERT INTO organizer (name, description, contactemail, active) VALUES (?, ?, ?, 0)',
+        [name.slice(0, 200), desc || null, mail.slice(0, 255)],
       );
       const id = Number(res?.insertId ?? 0);
       await tx.query(
