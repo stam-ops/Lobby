@@ -96,12 +96,19 @@ export class OrganizerSpaceService {
              ta.periodtype AS periodType, ta.perioddata AS periodData,
              UNIX_TIMESTAMP(ta.periodstart) AS periodStartEpoch,
              ta.buyin AS buyIn, ta.minplayers AS minPlayers, ta.maxplayers AS maxPlayers,
-             ta.tablesize AS tableSize, (ta.isvalid = 0) AS active,
+             ta.tablesize AS tableSize, ta.initstack AS initStack,
+             ta.timeforsubscriptionsbeforestart AS subscriptionMinutes,
+             ta.lastlateregisterlevel AS lastLateRegisterLevel,
+             -- La cadence n'est pas stockée telle quelle : on remonte la durée de niveau, dont
+             -- l'interface déduit le libellé (Turbo / Standard / Long).
+             gt.leveltime AS levelTimeMs,
+             (ta.isvalid = 0) AS active,
              oa.creationts AS createdTs,
              (SELECT COUNT(*) FROM tournament t
                WHERE t.tournamentarchetypeid = ta.tournamentarchetypeid) AS tournamentCount
         FROM organizerarchetype oa
         JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = oa.tournamentarchetypeid
+        LEFT JOIN gametime gt ON gt.gametimeid = ta.gametimeid
        WHERE oa.organizerid = ?
        ORDER BY oa.creationts DESC
     `, [organizerId]);
