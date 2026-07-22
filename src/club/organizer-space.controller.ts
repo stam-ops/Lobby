@@ -63,6 +63,25 @@ export class OrganizerSpaceController {
     return this.space.setArchetypeActive(organizerId, id, !!body?.active);
   }
 
+  @Post('tournaments/:id/cancel')
+  @ApiOperation({
+    summary: "Annule l'édition d'un tournoi — refusé s'il a des inscrits (remboursement requis)",
+  })
+  cancel(
+    @OrganizerId() organizerId: number,
+    @Param('id', ParseIntPipe) id: number,
+  ) {
+    return this.space.cancelTournamentInstance(organizerId, id);
+  }
+
+  @Get('ranking')
+  @ApiOperation({
+    summary: 'Classement général cumulé (N joueurs → N points au vainqueur, 1 au dernier)',
+  })
+  generalRanking(@OrganizerId() organizerId: number) {
+    return this.space.generalRanking(organizerId);
+  }
+
   @Get('results')
   @ApiOperation({ summary: 'Éditions jouées de mes tournois' })
   results(@OrganizerId() organizerId: number, @Query('archetypeId') archetypeId?: string) {

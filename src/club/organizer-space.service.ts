@@ -23,6 +23,40 @@ const CLUB_OPTIONS = {
   lastLateRegisterLevel: [1, 2, 3],
 } as const;
 
+/**
+ * Fragment SQL comptant les tournois d'un organisateur qui PÈSENT sur son quota, sur 30 jours
+ * glissants. Attend `?` = organizerid.
+ *
+ * Un tournoi annulé ne compte pas : l'organisateur n'a rien consommé. Deux formes d'annulation,
+ * qu'il faut distinguer :
+ *   - édition créée puis annulée (`gamestate = 5`) — par l'organisateur ou automatiquement, faute
+ *     d'inscrits ;
+ *   - annulée AVANT création de l'édition : pas d'instance, et archétype désactivé.
+ *
+ * ⚠️ Les deux conditions sont écrites en tolérant le NULL du LEFT JOIN. `NOT (t.gamestate = 5)`
+ * vaudrait NULL quand aucune instance n'existe, donc faux, et écarterait à tort les tournois
+ * simplement pas encore créés.
+ *
+ * ⚠️ `isvalid = 1` seul ne signifie PAS annulé : un archétype « une seule fois » se désactive de
+ * lui-même une fois son édition créée. On ne l'interprète donc qu'en l'absence d'instance.
+ */
+export const QUOTA_COUNT_SQL = `
+  SELECT COUNT(*) FROM organizerarchetype oa
+    JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = oa.tournamentarchetypeid
+    LEFT JOIN tournament t ON t.tournamentid = (
+          SELECT t2.tournamentid FROM tournament t2
+           WHERE t2.tournamentarchetypeid = oa.tournamentarchetypeid
+           ORDER BY t2.tournamentid DESC LIMIT 1)
+   WHERE oa.organizerid = ?
+     AND oa.creationts > NOW() - INTERVAL 30 DAY
+     AND (t.gamestate IS NULL OR t.gamestate <> 5)
+     AND (t.tournamentid IS NOT NULL OR ta.isvalid = 0)`;
+
+/** campok.client.codes.tournament.GameState */
+const GAME_STATE = { notStarted: 0, playing: 1, inBreak: 2, addonBreak: 3, ended: 4, canceled: 5 } as const;
+/** campok.client.codes.tournament.SubscriptionState */
+const SUBSCRIPTION_STATE = { notOpened: -1, subscription: 0, closed: 1 } as const;
+
 /** Retourne la valeur si elle appartient à la liste autorisée, sinon rejette la requête. */
 function pick(value: unknown, allowed: readonly number[], label: string): number {
   const n = Number(value);
@@ -67,11 +101,10 @@ export class OrganizerSpaceService {
       `SELECT o.organizerid AS organizerId, o.name, o.contactemail AS contactEmail,
               o.maxtournamentspermonth AS maxTournamentsPerMonth,
               o.maxplayerspertournament AS maxPlayersPerTournament,
-              (SELECT COUNT(*) FROM organizerarchetype oa
-                WHERE oa.organizerid = o.organizerid
-                  AND oa.creationts > NOW() - INTERVAL 30 DAY) AS usedThisMonth
+              (${QUOTA_COUNT_SQL}) AS usedThisMonth
          FROM organizer o WHERE o.organizerid = ?`,
-      [organizerId],
+      // Le premier `?` alimente QUOTA_COUNT_SQL, le second le WHERE de la requête englobante.
+      [organizerId, organizerId],
     );
     if (!row) throw new NotFoundException('Organisateur introuvable');
 
@@ -161,6 +194,73 @@ export class OrganizerSpaceService {
        ORDER BY t.starttime DESC
        LIMIT 200
     `, args);
+  }
+
+  /**
+   * Classement GÉNÉRAL cumulé sur tous les tournois terminés de l'organisateur.
+   *
+   * Barème : un tournoi à N joueurs rapporte N points au vainqueur et 1 point au dernier, soit
+   * `N - rang + 1`. N est le nombre de joueurs CLASSÉS de ce tournoi — quand les rangs se suivent
+   * de 1 à N, cela revient au nombre de participants tout en garantissant que le dernier obtient
+   * exactement 1 point, même si un joueur n'a pas été classé.
+   *
+   * ⚠️ Agrégation en deux temps. Dans un tournoi multi-tables, un joueur est déplacé de table en
+   * table : `gametableplayer` porte alors plusieurs lignes pour lui. Sommer directement compterait
+   * ses points autant de fois. On réduit donc d'abord à une ligne par (tournoi, joueur).
+   *
+   * Seuls les tournois TERMINÉS comptent : un tournoi en cours n'a pas de classement définitif, un
+   * tournoi annulé n'a pas eu lieu.
+   */
+  async generalRanking(organizerId: number) {
+    const rows = await this.dataSource.query(`
+      SELECT perPlayer.playerId,
+             pi.screenname AS screenName,
+             COUNT(*)                                        AS tournaments,
+             SUM(cnt.nb - perPlayer.rank + 1)                AS points,
+             SUM(CASE WHEN perPlayer.rank = 1 THEN 1 ELSE 0 END) AS wins,
+             MIN(perPlayer.rank)                             AS bestRank
+        FROM (
+              -- Une seule ligne par (tournoi, joueur) : neutralise les changements de table.
+              SELECT t.tournamentid AS tournamentId, ts.playerid AS playerId,
+                     MIN(gtp.rank) AS rank
+                FROM organizerarchetype oa
+                JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = oa.tournamentarchetypeid
+                JOIN tournament t  ON t.tournamentarchetypeid = ta.tournamentarchetypeid
+                JOIN tournamentsubscription ts ON ts.tournamentid = t.tournamentid
+                JOIN gametable gt  ON gt.tournamentid = t.tournamentid
+                JOIN gametableplayer gtp ON gtp.playerid = ts.playerid
+                                        AND gtp.gametableid = gt.gametableid
+                                        AND gtp.rank > 0
+               WHERE oa.organizerid = ?
+                 AND t.gamestate = ${GAME_STATE.ended}
+               GROUP BY t.tournamentid, ts.playerid
+             ) AS perPlayer
+        JOIN (
+              -- Nombre de joueurs classés, par tournoi : la base du barème.
+              SELECT tournamentId, COUNT(*) AS nb FROM (
+                    SELECT t2.tournamentid AS tournamentId, gtp2.playerid AS playerId
+                      FROM tournament t2
+                      JOIN gametable gt2 ON gt2.tournamentid = t2.tournamentid
+                      JOIN gametableplayer gtp2 ON gtp2.gametableid = gt2.gametableid
+                                               AND gtp2.rank > 0
+                     GROUP BY t2.tournamentid, gtp2.playerid
+                   ) AS distinctPlayers
+               GROUP BY tournamentId
+             ) AS cnt ON cnt.tournamentId = perPlayer.tournamentId
+        LEFT JOIN playerinfos pi ON pi.playerid = perPlayer.playerId
+       GROUP BY perPlayer.playerId, pi.screenname
+       ORDER BY points DESC, wins DESC, tournaments ASC
+    `, [organizerId]);
+
+    return rows.map((r: Record<string, unknown>, i: number) => ({
+      position: i + 1,
+      playerId: Number(r.playerId),
+      screenName: r.screenName as string | null,
+      tournaments: Number(r.tournaments),
+      points: Number(r.points),
+      wins: Number(r.wins),
+      bestRank: Number(r.bestRank),
+    }));
   }
 
   /** Classement d'un tournoi — l'appartenance est revérifiée, l'id venant du client. */
@@ -302,6 +402,66 @@ export class OrganizerSpaceService {
     );
     if (!row) throw new BadRequestException('Aucune structure de blindes configurée.');
     return Number(row.id);
+  }
+
+  /**
+   * Annule une ÉDITION déjà créée — uniquement si personne n'y est inscrit.
+   *
+   * ⚠️ La restriction « aucun inscrit » n'est pas du confort : la vraie annulation
+   * (TournamentServer.cancelTournament) ferme les inscriptions, passe le tournoi en `canceled`
+   * PUIS REMBOURSE chaque inscrit via TournamentM.tryTournamentRefund, dans une transaction.
+   * Se contenter des deux UPDATE sur un tournoi ayant des inscrits leur retirerait leur buy-in
+   * sans contrepartie — silencieusement. On refuse donc plutôt que de dupliquer ici une logique
+   * de remboursement qui touche aux soldes.
+   *
+   * Sans inscrit, il n'y a rien à rembourser : les deux écritures suffisent et reproduisent
+   * exactement l'état posé par le serveur de tournoi.
+   */
+  async cancelTournamentInstance(organizerId: number, archetypeId: number) {
+    const [row] = await this.dataSource.query<{
+      tournamentId: number | null; gameState: number | null; subscribers: number;
+    }[]>(`
+      SELECT t.tournamentid AS tournamentId, t.gamestate AS gameState,
+             (SELECT COUNT(*) FROM tournamentsubscription ts
+               WHERE ts.tournamentid = t.tournamentid AND ts.subscription = 0) AS subscribers
+        FROM organizerarchetype oa
+        JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = oa.tournamentarchetypeid
+        LEFT JOIN tournament t ON t.tournamentid = (
+              SELECT t2.tournamentid FROM tournament t2
+               WHERE t2.tournamentarchetypeid = ta.tournamentarchetypeid
+               ORDER BY t2.tournamentid DESC LIMIT 1)
+       WHERE oa.organizerid = ? AND oa.tournamentarchetypeid = ?`,
+      [organizerId, archetypeId],
+    );
+    if (!row) throw new ForbiddenException('Ce tournoi ne vous appartient pas.');
+    if (row.tournamentId == null) {
+      throw new BadRequestException("Ce tournoi n'a pas encore d'édition : utilisez la suspension.");
+    }
+    if (Number(row.gameState) !== GAME_STATE.notStarted) {
+      throw new BadRequestException(
+        'Ce tournoi est déjà démarré, terminé ou annulé : il ne peut plus être annulé ici.',
+      );
+    }
+    if (Number(row.subscribers) > 0) {
+      throw new BadRequestException(
+        `${row.subscribers} joueur(s) sont inscrits : l'annulation exige un remboursement et ne `
+        + 'peut pas être faite depuis cet écran. Contactez-nous.',
+      );
+    }
+
+    // Mêmes écritures, et dans le même ordre, que TournamentServer.cancelTournament().
+    await this.dataSource.transaction(async (tx) => {
+      await tx.query('UPDATE tournament SET subscriptionstate = ? WHERE tournamentid = ?',
+        [SUBSCRIPTION_STATE.closed, row.tournamentId]);
+      await tx.query('UPDATE tournament SET gamestate = ? WHERE tournamentid = ?',
+        [GAME_STATE.canceled, row.tournamentId]);
+      // L'archétype `oneTime` s'invalide déjà tout seul une fois l'instance créée ; on le pose
+      // explicitement pour qu'aucun passage de ServersManager ne recrée une édition.
+      await tx.query('UPDATE tournamentarchetype SET isvalid = 1 WHERE tournamentarchetypeid = ?',
+        [archetypeId]);
+    });
+
+    return this.myArchetypes(organizerId);
   }
 
   /** Active/désactive la planification — uniquement sur ses propres archétypes. */

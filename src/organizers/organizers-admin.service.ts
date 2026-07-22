@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { OrganizerSignupService } from './organizer-signup.service';
+import { QUOTA_COUNT_SQL } from '../club/organizer-space.service';
 
 export interface OrganizerAdminRow {
   organizerId: number;
@@ -58,9 +59,10 @@ export class OrganizersAdminService {
              u.lastlogints AS lastLoginTs,
              (SELECT COUNT(*) FROM organizerarchetype oa
                WHERE oa.organizerid = o.organizerid) AS tournamentsTotal,
-             (SELECT COUNT(*) FROM organizerarchetype oa
-               WHERE oa.organizerid = o.organizerid
-                 AND oa.creationts > NOW() - INTERVAL 30 DAY) AS tournamentsThisMonth
+             -- Même décompte que celui vu par l'organisateur : les tournois annulés ne pèsent pas
+             -- sur son quota, l'admin doit voir le même chiffre pour arbitrer une augmentation.
+             (${QUOTA_COUNT_SQL.replace('oa.organizerid = ?', 'oa.organizerid = o.organizerid')})
+               AS tournamentsThisMonth
       FROM organizer o
       LEFT JOIN backofficeuser u ON u.organizerid = o.organizerid
       ${where}

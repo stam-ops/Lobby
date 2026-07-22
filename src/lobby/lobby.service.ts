@@ -204,8 +204,18 @@ export class LobbyService {
       FROM tournament t
       JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = t.tournamentarchetypeid
       WHERE ta.starttype = 1
-        AND t.gamestate IN (0, 1, 2, 3)
         AND ta.clubid IS NULL
+        AND (
+              -- Pas encore démarré, inscriptions ouvertes (0) ou closes (1). Le cas « closes »
+              -- est conservé bien qu'il ne soit pas rejoignable : sans lui, le tournoi
+              -- disparaîtrait de la liste entre la fermeture des inscriptions et son démarrage,
+              -- puis y reviendrait — un clignotement inexplicable côté joueur.
+              -- Seul -1 (inscriptions pas encore ouvertes) est écarté : ces tournois sont créés
+              -- longtemps à l'avance et encombreraient la liste sans être actionnables.
+              (t.gamestate = 0 AND t.subscriptionstate IN (0, 1))
+              -- Déjà en jeu, en pause ou en pause d'addon.
+              OR t.gamestate IN (1, 2, 3)
+            )
       ORDER BY t.starttime ASC, ta.periodtype ASC
     `);
   }

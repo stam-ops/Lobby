@@ -72,7 +72,14 @@ export class LobbyController {
   // ── Tournaments ───────────────────────────────────────────────────────────
 
   @ApiTags('Tournaments')
-  @ApiOperation({ summary: 'Tous les tournois actifs (gamestate IN 0,1)' })
+  @ApiOperation({
+    summary: 'Tournois non démarrés avec inscriptions ouvertes, ou déjà en cours',
+    description:
+      'Publics ET privés : un tournoi à code d\'accès (type = 4) reste visible, seule '
+      + "l'inscription exige le code — le client lit `type` pour savoir s'il doit le demander. "
+      + "Sont écartés : les tournois dont les inscriptions ne sont pas encore ouvertes, ceux "
+      + 'terminés ou annulés, et ceux de club (`clubid`).',
+  })
   @ApiResponse({ status: 200, type: [TournamentDto] })
   @Get('tournaments')
   getTournaments() {
@@ -80,7 +87,13 @@ export class LobbyController {
   }
 
   @ApiTags('Tournaments')
-  @ApiOperation({ summary: 'Tournois du club du joueur (JOIN clubplayer) — PAS les inscriptions' })
+  @ApiOperation({
+    summary: 'Tournois du club du joueur (JOIN clubplayer) — PAS les inscriptions',
+    description:
+      "/!\\ Inopérant sur les bases où la fonctionnalité club n'a pas été déployée : la requête "
+      + 'joint `clubplayer`, table absente, et échoue. Pour un tournoi privé, utiliser le type '
+      + "« code d'accès » : ces tournois figurent dans /lobby/tournaments comme les autres.",
+  })
   @ApiParam({ name: 'playerId', type: Number, example: 123 })
   @ApiResponse({ status: 200, type: [TournamentDto] })
   @Get('tournaments/private/:playerId')
