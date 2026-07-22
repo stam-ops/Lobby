@@ -44,8 +44,9 @@ export class OrganizerSpaceController {
   create(
     @OrganizerId() organizerId: number,
     @Body() body: {
-      label?: string; startAt?: string; maxPlayers?: number;
-      accessCode?: string; buyIn?: number; cadence?: string;
+      label?: string; startAt?: string; maxPlayers?: number; tableSize?: number;
+      accessCode?: string; buyIn?: number; cadence?: string; initStack?: number;
+      subscriptionMinutes?: number; lastLateRegisterLevel?: number;
     },
   ) {
     // Corps volontairement étroit : tout champ moteur envoyé en plus est ignoré, faute d'être lu.

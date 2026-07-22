@@ -82,19 +82,33 @@ export class OrganizerSignupService {
 
     // Transaction : un compte sans organisateur rattaché, ou l'inverse, serait un état que la
     // file de validation ne saurait pas présenter.
-    const organizerId = await this.dataSource.transaction(async (tx) => {
-      const res = await tx.query(
-        'INSERT INTO organizer (name, description, contactemail, active) VALUES (?, ?, ?, 0)',
-        [name.slice(0, 200), desc || null, mail.slice(0, 255)],
-      );
-      const id = Number(res?.insertId ?? 0);
-      await tx.query(
-        `INSERT INTO backofficeuser (email, password, role, organizerid, active)
-         VALUES (?, ?, 'club', ?, 0)`,
-        [mail.slice(0, 255), passwordHash, id],
-      );
-      return id;
-    });
+    let organizerId: number;
+    try {
+      organizerId = await this.dataSource.transaction(async (tx) => {
+        const res = await tx.query(
+          'INSERT INTO organizer (name, description, contactemail, active) VALUES (?, ?, ?, 0)',
+          [name.slice(0, 200), desc || null, mail.slice(0, 255)],
+        );
+        const id = Number(res?.insertId ?? 0);
+        await tx.query(
+          `INSERT INTO backofficeuser (email, password, role, organizerid, active)
+           VALUES (?, ?, 'club', ?, 0)`,
+          [mail.slice(0, 255), passwordHash, id],
+        );
+        return id;
+      });
+    } catch (e) {
+      // Course entre le SELECT ci-dessus et l'INSERT : deux soumissions simultanées de la même
+      // adresse passent toutes deux le contrôle, et c'est la contrainte d'unicité qui tranche.
+      // On traite ce cas comme un doublon ordinaire — sinon le demandeur reçoit un 500 là où le
+      // contrôle applicatif aurait répondu le message générique, ce qui trahirait au passage
+      // l'existence de l'adresse.
+      if ((e as { code?: string })?.code === 'ER_DUP_ENTRY') {
+        this.logger.log(`Inscription concurrente ignorée, adresse déjà prise : ${mail}`);
+        return;
+      }
+      throw e;
+    }
 
     await this.sendVerificationLink(organizerId, name, mail);
   }

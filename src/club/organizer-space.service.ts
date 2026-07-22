@@ -4,6 +4,34 @@ import {
   FREE_PRIZE_STRUCTURE_ID, TournamentArchetypeService,
 } from '../catalog/tournament-archetype.service';
 
+/**
+ * Valeurs proposées aux organisateurs, et SEULES acceptées.
+ *
+ * Ces listes bornent volontairement la configuration : chaque combinaison possible ici a un
+ * comportement connu du moteur. Ouvrir ces champs en saisie libre reviendrait à laisser un
+ * utilisateur externe produire des tournois ingérables (tables de 2, stacks aberrants…).
+ *
+ * `subscriptionMinutes` : 0 = inscriptions ouvertes dès la création de l'instance ; 60 = une heure
+ * avant le début. Cf. le piège documenté dans TournamentArchetypeService (0 ≠ « pas d'inscription »).
+ */
+const CLUB_OPTIONS = {
+  maxPlayers: [50, 100, 200, 400, 600, 1000],
+  tableSize: [4, 6, 8],
+  buyIn: [100, 300, 500, 1000],
+  initStack: [1500, 3000, 5000, 10000],
+  subscriptionMinutes: [0, 60],
+  lastLateRegisterLevel: [1, 2, 3],
+} as const;
+
+/** Retourne la valeur si elle appartient à la liste autorisée, sinon rejette la requête. */
+function pick(value: unknown, allowed: readonly number[], label: string): number {
+  const n = Number(value);
+  if (!allowed.includes(n)) {
+    throw new BadRequestException(`${label} : valeur non autorisée (${allowed.join(', ')}).`);
+  }
+  return n;
+}
+
 export interface OrganizerProfile {
   organizerId: number;
   name: string;
@@ -154,8 +182,9 @@ export class OrganizerSpaceService {
    * mécanisme de confidentialité utilisable ici, `clubid` dépendant de tables absentes.
    */
   async createTournament(organizerId: number, input: {
-    label?: string; startAt?: string; maxPlayers?: number;
-    accessCode?: string; buyIn?: number; cadence?: string;
+    label?: string; startAt?: string; maxPlayers?: number; tableSize?: number;
+    accessCode?: string; buyIn?: number; cadence?: string; initStack?: number;
+    subscriptionMinutes?: number; lastLateRegisterLevel?: number;
   }) {
     const profile = await this.profile(organizerId);
 
@@ -165,15 +194,25 @@ export class OrganizerSpaceService {
         + "Contactez-nous pour l'augmenter.",
       );
     }
-    const maxPlayers = Number(input.maxPlayers ?? 0);
-    if (maxPlayers < 2) throw new BadRequestException('Indiquez au moins 2 joueurs.');
+    // Liste blanche : l'interface propose ces valeurs, mais rien n'empêche un client modifié d'en
+    // poster d'autres. On revalide donc côté serveur — c'est ce qui garantit qu'un organisateur ne
+    // peut pas fabriquer une configuration hors des cas éprouvés.
+    const maxPlayers = pick(input.maxPlayers, CLUB_OPTIONS.maxPlayers, 'Nombre de joueurs');
+    const tableSize = pick(input.tableSize, CLUB_OPTIONS.tableSize, 'Joueurs par table');
+    const buyIn = pick(input.buyIn, CLUB_OPTIONS.buyIn, 'Buy-in');
+    const initStack = pick(input.initStack, CLUB_OPTIONS.initStack, 'Stack initial');
+    const subscriptionMinutes = pick(
+      input.subscriptionMinutes, CLUB_OPTIONS.subscriptionMinutes, 'Ouverture des inscriptions',
+    );
+    const lastLateRegisterLevel = pick(
+      input.lastLateRegisterLevel, CLUB_OPTIONS.lastLateRegisterLevel, 'Inscription tardive',
+    );
+
     if (profile.maxPlayersPerTournament > 0 && maxPlayers > profile.maxPlayersPerTournament) {
       throw new BadRequestException(
         `Votre plafond est de ${profile.maxPlayersPerTournament} joueurs par tournoi.`,
       );
     }
-
-    const buyIn = Number(input.buyIn ?? 0);
     const gameTimeId = await this.resolveGameTimeId(input.cadence ?? 'normal');
     const blindStructureId = await this.resolveBlindStructureId();
 
@@ -187,19 +226,23 @@ export class OrganizerSpaceService {
       accessCode: input.accessCode,
       periodType: 1,                 // une seule fois : un évènement d'association
       periodStart: input.startAt,
-      subscriptionMinutes: 60,
+      subscriptionMinutes,
+      // Minimum figé à 2 et non exposé : en dessous du minimum le tournoi est annulé, un
+      // organisateur n'a aucune raison de vouloir un seuil d'annulation plus haut.
       minPlayers: 2,
       maxPlayers,
-      tableSize: 9,
+      tableSize,
       buyIn,
       // Gratuit → dotation fixe imposée (la génération automatique partirait de zéro).
       // Payant → null, ServersManager génère la structure au premier passage.
       prizeStructureId: buyIn === 0 ? FREE_PRIZE_STRUCTURE_ID : null,
-      initStack: 5000,
+      initStack,
       gameTimeId,
       blindStructureId,
+      // Rebuy et addon désactivés : les deux se pilotent par la même colonne, et les proposer
+      // exigerait d'expliquer le système de pauses horaires à un organisateur occasionnel.
       addonBreakIndex: 0,
-      lastLateRegisterLevel: 3,
+      lastLateRegisterLevel,
       minLevel: 0,
       active: true,
     });
