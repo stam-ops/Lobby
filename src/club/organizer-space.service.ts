@@ -105,10 +105,21 @@ export class OrganizerSpaceService {
              (ta.isvalid = 0) AS active,
              oa.creationts AS createdTs,
              (SELECT COUNT(*) FROM tournament t
-               WHERE t.tournamentarchetypeid = ta.tournamentarchetypeid) AS tournamentCount
+               WHERE t.tournamentarchetypeid = ta.tournamentarchetypeid) AS tournamentCount,
+             -- État RÉEL du tournoi : l'archétype ne sait que s'il sera créé. Les états vivants
+             -- (inscriptions ouvertes, en cours, terminé) sont portés par l'instance. Un archétype
+             -- « une seule fois » n'en a qu'une, d'où le LIMIT 1 sur la plus récente.
+             inst.tournamentid AS tournamentId,
+             inst.subscriptionstate AS subscriptionState,
+             inst.gamestate AS gameState,
+             inst.playerscount AS playersCount
         FROM organizerarchetype oa
         JOIN tournamentarchetype ta ON ta.tournamentarchetypeid = oa.tournamentarchetypeid
         LEFT JOIN gametime gt ON gt.gametimeid = ta.gametimeid
+        LEFT JOIN tournament inst ON inst.tournamentid = (
+              SELECT t2.tournamentid FROM tournament t2
+               WHERE t2.tournamentarchetypeid = ta.tournamentarchetypeid
+               ORDER BY t2.tournamentid DESC LIMIT 1)
        WHERE oa.organizerid = ?
        ORDER BY oa.creationts DESC
     `, [organizerId]);
@@ -117,6 +128,13 @@ export class OrganizerSpaceService {
       ...r,
       active: Number(r.active) === 1,
       tournamentCount: Number(r.tournamentCount),
+      // Ces trois colonnes viennent d'un LEFT JOIN : elles sont nulles tant qu'aucune instance
+      // n'existe. On préserve le null plutôt que de le convertir en 0, qui serait un état valide
+      // (0 = inscriptions ouvertes / jeu non démarré) et donc trompeur.
+      tournamentId: r.tournamentId == null ? null : Number(r.tournamentId),
+      subscriptionState: r.subscriptionState == null ? null : Number(r.subscriptionState),
+      gameState: r.gameState == null ? null : Number(r.gameState),
+      playersCount: r.playersCount == null ? null : Number(r.playersCount),
     }));
   }
 
