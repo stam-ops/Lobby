@@ -99,6 +99,56 @@ export class OrganizersAdminService {
     });
   }
 
+  /**
+   * File des demandes des organisateurs.
+   *
+   * @param status 'pending' = à traiter, 'handled' = traitées, sinon toutes.
+   *
+   * Le quota courant et la consommation sont joints : l'administrateur décide d'un relèvement en
+   * regardant ces chiffres, les chercher sur un autre écran l'obligerait à naviguer.
+   */
+  async listRequests(status: string) {
+    const conds: string[] = [];
+    if (status === 'pending') conds.push('r.handledts IS NULL');
+    if (status === 'handled') conds.push('r.handledts IS NOT NULL');
+    const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
+
+    const rows = await this.dataSource.query(`
+      SELECT r.organizerrequestid AS id, r.type, r.message,
+             r.creationts AS creationTs, r.handledts AS handledTs,
+             u.email AS handledByEmail,
+             o.organizerid AS organizerId, o.name AS organizerName,
+             o.contactemail AS contactEmail,
+             o.maxtournamentspermonth AS maxTournamentsPerMonth,
+             o.maxplayerspertournament AS maxPlayersPerTournament,
+             (${QUOTA_COUNT_SQL.replace('oa.organizerid = ?', 'oa.organizerid = o.organizerid')})
+               AS usedThisMonth
+        FROM organizerrequest r
+        JOIN organizer o ON o.organizerid = r.organizerid
+        LEFT JOIN backofficeuser u ON u.backofficeuserid = r.handledby
+      ${where}
+      ORDER BY r.handledts IS NOT NULL ASC, r.creationts DESC
+    `);
+
+    return rows.map((r: Record<string, unknown>) => ({
+      ...r,
+      handled: r.handledTs != null,
+      usedThisMonth: Number(r.usedThisMonth),
+    }));
+  }
+
+  /** Marque une demande comme traitée (ou la rouvre). */
+  async setRequestHandled(requestId: number, handled: boolean, adminId?: number) {
+    const res = await this.dataSource.query(
+      `UPDATE organizerrequest
+          SET handledts = ${handled ? 'NOW()' : 'NULL'},
+              handledby = ?
+        WHERE organizerrequestid = ?`,
+      [handled ? (adminId ?? null) : null, requestId],
+    );
+    if (!res?.affectedRows) throw new NotFoundException(`Demande ${requestId} introuvable`);
+  }
+
   /** Ajuste les quotas. 0 = illimité. */
   async setQuota(organizerId: number, perMonth: number, maxPlayers: number): Promise<void> {
     if (!Number.isInteger(perMonth) || perMonth < 0) throw new BadRequestException('Quota mensuel invalide');

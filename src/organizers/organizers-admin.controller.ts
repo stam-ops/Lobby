@@ -4,6 +4,8 @@ import {
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { OrganizersAdminService } from './organizers-admin.service';
 import { Auth, Roles } from '../auth/auth.decorator';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { AuthUser } from '../auth/auth.types';
 
 /**
  * File de validation des organisateurs — personnel interne uniquement.
@@ -24,6 +26,24 @@ export class OrganizersAdminController {
   @ApiQuery({ name: 'status', required: false, description: 'pending | active | all' })
   list(@Query('status', new DefaultValuePipe('all')) status: string) {
     return this.organizers.list(status);
+  }
+
+  @Get('requests')
+  @ApiOperation({ summary: 'Demandes des organisateurs (relèvement de seuils)' })
+  @ApiQuery({ name: 'status', required: false, description: 'pending | handled | all' })
+  listRequests(@Query('status', new DefaultValuePipe('pending')) status: string) {
+    return this.organizers.listRequests(status);
+  }
+
+  @Patch('requests/:id/handled')
+  @ApiOperation({ summary: 'Marque une demande comme traitée, ou la rouvre' })
+  async setRequestHandled(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() body: { handled: boolean },
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.organizers.setRequestHandled(id, !!body?.handled, user?.adminId);
+    return this.organizers.listRequests('all');
   }
 
   @Patch(':id/active')

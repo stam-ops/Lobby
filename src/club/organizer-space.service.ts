@@ -52,6 +52,10 @@ export const QUOTA_COUNT_SQL = `
      AND (t.gamestate IS NULL OR t.gamestate <> 5)
      AND (t.tournamentid IS NOT NULL OR ta.isvalid = 0)`;
 
+/** Nature d'une demande d'organisateur — doit rester alignée sur l'énumération du front. */
+export const REQUEST_TYPE = { moreTournaments: 1, morePlayers: 2, other: 3 } as const;
+const REQUEST_TYPES: number[] = Object.values(REQUEST_TYPE);
+
 /** campok.client.codes.tournament.GameState */
 const GAME_STATE = { notStarted: 0, playing: 1, inBreak: 2, addonBreak: 3, ended: 4, canceled: 5 } as const;
 /** campok.client.codes.tournament.SubscriptionState */
@@ -120,6 +124,56 @@ export class OrganizerSpaceService {
       // 0 = illimité, d'où le null plutôt qu'un nombre négatif trompeur.
       remainingThisMonth: max === 0 ? null : Math.max(0, max - used),
     };
+  }
+
+  /**
+   * Enregistre une demande de l'organisateur (relèvement de seuil, autre).
+   *
+   * Volontairement sans effet sur les quotas : la demande est un message, l'arbitrage reste
+   * humain. Un organisateur ne doit pas pouvoir relever ses propres plafonds.
+   */
+  async createRequest(organizerId: number, type: number, message: string) {
+    if (!REQUEST_TYPES.includes(type)) {
+      throw new BadRequestException('Type de demande inconnu.');
+    }
+    const text = (message ?? '').trim().slice(0, 2000);
+    // Une demande « Autre » sans texte serait ininterprétable par l'administrateur.
+    if (type === REQUEST_TYPE.other && !text) {
+      throw new BadRequestException('Précisez votre demande.');
+    }
+
+    // Une demande identique déjà en attente : inutile d'en empiler une seconde, l'administrateur
+    // verrait deux fois le même dossier sans information supplémentaire.
+    const [pending] = await this.dataSource.query<{ n: number }[]>(
+      `SELECT COUNT(*) AS n FROM organizerrequest
+        WHERE organizerid = ? AND type = ? AND handledts IS NULL`,
+      [organizerId, type],
+    );
+    if (Number(pending?.n) > 0) {
+      throw new BadRequestException(
+        'Une demande de ce type est déjà en cours de traitement. Nous revenons vers vous rapidement.',
+      );
+    }
+
+    await this.dataSource.query(
+      'INSERT INTO organizerrequest (organizerid, type, message) VALUES (?, ?, ?)',
+      [organizerId, type, text || null],
+    );
+    return this.myRequests(organizerId);
+  }
+
+  /** Ses propres demandes, pour qu'il sache où elles en sont. */
+  async myRequests(organizerId: number) {
+    const rows = await this.dataSource.query(
+      `SELECT organizerrequestid AS id, type, message,
+              creationts AS creationTs, handledts AS handledTs
+         FROM organizerrequest
+        WHERE organizerid = ?
+        ORDER BY creationts DESC
+        LIMIT 20`,
+      [organizerId],
+    );
+    return rows.map((r: Record<string, unknown>) => ({ ...r, handled: r.handledTs != null }));
   }
 
   /** Les archétypes de cet organisateur, avec le nombre d'instances déjà jouées. */

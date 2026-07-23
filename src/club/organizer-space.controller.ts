@@ -31,6 +31,21 @@ export class OrganizerSpaceController {
     return this.space.profile(organizerId);
   }
 
+  @Get('requests')
+  @ApiOperation({ summary: 'Mes demandes de relèvement de seuils' })
+  myRequests(@OrganizerId() organizerId: number) {
+    return this.space.myRequests(organizerId);
+  }
+
+  @Post('requests')
+  @ApiOperation({ summary: 'Déposer une demande (1 = tournois, 2 = joueurs, 3 = autre)' })
+  createRequest(
+    @OrganizerId() organizerId: number,
+    @Body() body: { type?: number; message?: string },
+  ) {
+    return this.space.createRequest(organizerId, Number(body?.type), body?.message ?? '');
+  }
+
   @Get('tournaments')
   @ApiOperation({ summary: 'Mes tournois récurrents' })
   myArchetypes(@OrganizerId() organizerId: number) {
