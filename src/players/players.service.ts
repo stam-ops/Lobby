@@ -1,4 +1,4 @@
-import { BadRequestException, Injectable, NotFoundException } from '@nestjs/common';
+import { BadRequestException, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { PlayerDetailDto, PlayerListDto, PlayerRowDto } from './dto/player-row.dto';
 import { DayCountDto } from './dto/day-count.dto';
@@ -41,6 +41,8 @@ const toBool = (v: unknown): boolean => v === true || v === 1 || v === '1' || Nu
  */
 @Injectable()
 export class PlayersService {
+  private readonly logger = new Logger(PlayersService.name);
+
   constructor(
     private readonly dataSource: DataSource,
     private readonly blacklist: BlacklistService,
@@ -164,6 +166,39 @@ export class PlayersService {
     r.chatBanned = toBool(r.chatBanned);
     r.camBanned = toBool(r.camBanned);
     return r;
+  }
+
+  /**
+   * Modifie MANUELLEMENT le solde de jetons d'un joueur (playeraccount.amount).
+   *
+   * ⚠️ Écriture directe, hors du flux de jeu : elle contourne toute la comptabilité normale
+   * (débits de buy-in, gains, bonus). À réserver aux corrections d'exploitation. On journalise
+   * l'ancien et le nouveau solde avec l'admin auteur — c'est la seule trace de l'opération.
+   */
+  async setBalance(playerId: number, amount: number, adminId: number, adminEmail?: string): Promise<void> {
+    if (!Number.isInteger(amount) || amount < 0) {
+      throw new BadRequestException('Le solde doit être un entier positif ou nul.');
+    }
+    const [row] = await this.dataSource.query<{ amount: number }[]>(
+      'SELECT amount FROM playeraccount WHERE playerid = ?',
+      [playerId],
+    );
+    if (!row) {
+      // Pas de ligne playeraccount : on ne l'invente pas (colonnes/contraintes inconnues du flux
+      // de création). L'admin saura que ce joueur n'a jamais eu de compte de jetons.
+      throw new NotFoundException(
+        `Le joueur ${playerId} n'a pas de compte de jetons : impossible de fixer son solde.`,
+      );
+    }
+    const before = Number(row.amount);
+    await this.dataSource.query(
+      'UPDATE playeraccount SET amount = ? WHERE playerid = ?',
+      [amount, playerId],
+    );
+    this.logger.warn(
+      `[SOLDE] Modification manuelle du solde du joueur ${playerId} : ${before} -> ${amount} `
+      + `par admin ${adminId}${adminEmail ? ` (${adminEmail})` : ''}`,
+    );
   }
 
   /** Applique un ban. Idempotent (no-op si déjà actif). moderatorId = backofficeuserid. */

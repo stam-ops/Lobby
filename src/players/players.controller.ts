@@ -7,6 +7,7 @@ import { PlayerDetailDto, PlayerListDto } from './dto/player-row.dto';
 import { DayCountDto } from './dto/day-count.dto';
 import { BanDto, BanType } from './dto/ban.dto';
 import { SetTypeDto } from './dto/set-type.dto';
+import { SetBalanceDto } from './dto/set-balance.dto';
 import { Auth, Roles } from '../auth/auth.decorator';
 import { CurrentUser } from '../auth/current-user.decorator';
 import { AuthUser } from '../auth/auth.types';
@@ -80,6 +81,20 @@ export class PlayersController {
   @ApiOperation({ summary: 'Changer le type d\'un joueur (normal / vip / modo). VIP : date de fin requise.' })
   async setType(@Param('id', ParseIntPipe) id: number, @Body() dto: SetTypeDto) {
     await this.players.setType(id, dto.type, dto.endVipTs);
+    return { ok: true };
+  }
+
+  @Patch(':id/balance')
+  @Roles('admin')
+  @ApiOperation({
+    summary: 'Modifier MANUELLEMENT le solde de jetons (playeraccount.amount) — hors flux de jeu',
+  })
+  async setBalance(
+    @Param('id', ParseIntPipe) id: number,
+    @Body() dto: SetBalanceDto,
+    @CurrentUser() user: AuthUser,
+  ) {
+    await this.players.setBalance(id, Number(dto?.amount), user.adminId ?? 0, user.email);
     return { ok: true };
   }
 
