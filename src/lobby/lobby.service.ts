@@ -4,6 +4,7 @@ import { DataSource, Repository } from 'typeorm';
 import { GametablePlayerEntity } from './entities/gametable-player.entity';
 import { TournamentSubscriptionEntity } from './entities/tournament-subscription.entity';
 import { CgTableDto } from './dto/cg-table.dto';
+import { FriendCgTableDto } from './dto/friend-cg-table.dto';
 import { SngTableDto } from './dto/sng-table.dto';
 import { TournamentDto } from './dto/tournament.dto';
 import { PlayerStackDto } from './dto/player-stack.dto';
@@ -338,6 +339,65 @@ export class LobbyService {
   }
 
   // ── Players ───────────────────────────────────────────────────────────────
+  // Tables de cash game (publiques ou privées) où au moins un AMI du joueur est ASSIS (endts=0) et où
+  // le joueur lui-même n'est PAS assis. Sert au lobby : mettre ces tables en avant (code couleur).
+  // Dès que le joueur s'y assoit, elle sort d'ici (sous-requête d'exclusion) et devient une table
+  // active normale → pas de doublon. friendrelationstate=0 = ami, bidirectionnel.
+  async getFriendsCashTables(playerId: number): Promise<FriendCgTableDto[]> {
+    const rows = await this.dataSource.query<any[]>(`
+      SELECT
+        gt.gametableid  AS tableId,
+        COALESCE(NULLIF(gt.label, ''), gta.label) AS label,
+        gta.minplayers  AS minPlayers,
+        gta.maxplayers  AS maxPlayers,
+        bv.smallblind   AS smallBlind,
+        bv.bigblind     AS bigBlind,
+        gta.moneytype   AS moneyType,
+        gta.gametype    AS gameType,
+        gta.limittype   AS limitType,
+        gta.hasvideo    AS hasVideo,
+        gt.playerscount AS nbPlayers,
+        GROUP_CONCAT(DISTINCT pi.screenname SEPARATOR '||') AS friendNamesRaw
+      FROM gametable gt
+      JOIN gametablearchetype gta ON gt.gametablearchetypeid = gta.gametablearchetypeid
+      JOIN blindlevel         bl  ON bl.blindstructureid = gta.blindstructureid
+      JOIN blindvalues        bv  ON bv.blindvaluesid    = bl.blindvaluesid
+      JOIN gametableplayer    tp  ON tp.gametableid = gt.gametableid AND tp.endts = 0
+      JOIN friendrelation     fr  ON fr.friendrelationstate = 0
+                                  AND ( (fr.playeridfrom = ? AND fr.playeridto = tp.playerid)
+                                     OR (fr.playeridto   = ? AND fr.playeridfrom = tp.playerid) )
+      JOIN playerinfos        pi  ON pi.playerid = tp.playerid
+      WHERE gt.launchstate = 2
+        AND gt.tabletype   = 0
+        AND gt.gametableid NOT IN (
+              SELECT gametableid FROM gametableplayer WHERE playerid = ? AND endts = 0
+        )
+      GROUP BY gt.gametableid, gt.label, gta.label, gta.minplayers, gta.maxplayers,
+               bv.smallblind, bv.bigblind, gta.moneytype, gta.gametype, gta.limittype,
+               gta.hasvideo, gt.playerscount
+      ORDER BY gt.gametableid
+    `, [playerId, playerId, playerId]);
+
+    return rows.map((r) => {
+      const names = r.friendNamesRaw ? String(r.friendNamesRaw).split('||') : [];
+      return {
+        tableId: r.tableId,
+        label: r.label,
+        minPlayers: r.minPlayers,
+        maxPlayers: r.maxPlayers,
+        smallBlind: r.smallBlind,
+        bigBlind: r.bigBlind,
+        moneyType: r.moneyType,
+        gameType: r.gameType,
+        limitType: r.limitType,
+        hasVideo: r.hasVideo,
+        nbPlayers: r.nbPlayers,
+        friendNames: names,
+        friendCount: names.length,
+      } as FriendCgTableDto;
+    });
+  }
+
   // Source: GameTablePlayer.java → getActiveTablePlayersStacks(tableId)
   // pi.screenname est une vraie colonne de playerinfos
 

@@ -3,6 +3,7 @@ import { ApiBearerAuth, ApiOperation, ApiParam, ApiResponse, ApiTags } from '@ne
 import { Auth } from '../auth/auth.decorator';
 import { LobbyService } from './lobby.service';
 import { CgTableDto } from './dto/cg-table.dto';
+import { FriendCgTableDto } from './dto/friend-cg-table.dto';
 import { SngTableDto } from './dto/sng-table.dto';
 import { TournamentDto } from './dto/tournament.dto';
 import { PlayerStackDto } from './dto/player-stack.dto';
@@ -40,6 +41,19 @@ export class LobbyController {
   @Get('cg-tables/owned/:ownerId')
   getOwnerPrivateCGTables(@Param('ownerId', ParseIntPipe) ownerId: number) {
     return this.lobby.getOwnerPrivateCGTables(ownerId);
+  }
+
+  @ApiTags('Cash Game Tables')
+  @ApiOperation({
+    summary: 'Tables de cash game où un AMI du joueur est assis (et où le joueur ne l\'est pas)',
+    description: 'Sert à mettre ces tables en avant sur le lobby. Une table où le joueur s\'assoit '
+      + 'en sort automatiquement (elle devient une table active normale) → pas de doublon.',
+  })
+  @ApiParam({ name: 'playerId', type: Number, example: 123, description: 'player.playerid' })
+  @ApiResponse({ status: 200, type: [FriendCgTableDto] })
+  @Get('cg-tables/friends/:playerId')
+  getFriendsCashTables(@Param('playerId', ParseIntPipe) playerId: number) {
+    return this.lobby.getFriendsCashTables(playerId);
   }
 
   // ── SNG Tables ────────────────────────────────────────────────────────────
