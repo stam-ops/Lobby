@@ -118,7 +118,9 @@ export class PlayersService {
              p.sponsorcode AS sponsorCode,
              (COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) AS solde, COALESCE(pa.cams, 0) AS cams,
              (SELECT COUNT(*) FROM sponsor s WHERE s.playeridfrom = p.playerid) AS filleulCount,
-             EXISTS(SELECT 1 FROM sponsor s WHERE s.playeridto = p.playerid) AS hasSponsor,
+             (SELECT s.playeridfrom FROM sponsor s WHERE s.playeridto = p.playerid LIMIT 1) AS sponsorPlayerId,
+             (SELECT spi.screenname FROM sponsor s JOIN playerinfos spi ON spi.playerid = s.playeridfrom
+               WHERE s.playeridto = p.playerid LIMIT 1) AS sponsorScreenName,
              EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid) AS siteBanned
       FROM player p
       JOIN playerinfos pi ON pi.playerid = p.playerid
@@ -142,7 +144,7 @@ export class PlayersService {
       it.solde = Number(it.solde);
       it.cams = Number(it.cams);
       it.filleulCount = Number(it.filleulCount);
-      it.hasSponsor = toBool(it.hasSponsor);
+      it.sponsorPlayerId = it.sponsorPlayerId == null ? null : Number(it.sponsorPlayerId);
     }
 
     return { items, total: totalRow[0]?.total ?? 0 };
