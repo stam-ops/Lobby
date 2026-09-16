@@ -11,6 +11,8 @@ export class PlayerRowDto {
   @ApiProperty({ nullable: true, description: 'Code de parrainage (player.sponsorcode)' }) sponsorCode: string;
   @ApiProperty({ description: 'Solde total (amount + amountbonus)' }) solde: number;
   @ApiProperty({ description: "Crédits Cam's" }) cams: number;
+  @ApiProperty({ description: 'Nombre de filleuls (parrainages émis)' }) filleulCount: number;
+  @ApiProperty({ description: 'A un parrain' }) hasSponsor: boolean;
   @ApiProperty({ description: 'Banni du site (table blacklist)' }) siteBanned: boolean;
 }
 

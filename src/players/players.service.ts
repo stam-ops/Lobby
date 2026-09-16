@@ -19,7 +19,9 @@ export interface PlayerListParams {
   sponsorCode?: string;
   /** Parrain : pseudo, playerId ou code de parrainage du parrain. */
   sponsor?: string;
-  sortBy?: 'creation' | 'solde' | 'cams';
+  /** 'sponsored' = a un parrain ; 'sponsors' = a au moins un filleul. */
+  relation?: 'sponsored' | 'sponsors';
+  sortBy?: 'creation' | 'solde' | 'cams' | 'filleuls';
   sortDir: 'asc' | 'desc';
   limit: number;
   offset: number;
@@ -58,7 +60,8 @@ export class PlayersService {
 
   async list(params: PlayerListParams): Promise<PlayerListDto> {
     const {
-      search, type, removed, os, signInMethod, appVersion, sponsorCode, sponsor, sortBy, sortDir, limit, offset,
+      search, type, removed, os, signInMethod, appVersion, sponsorCode, sponsor, relation,
+      sortBy, sortDir, limit, offset,
     } = params;
     const like = `%${search}%`;
     const searchId = /^\d+$/.test(search) ? Number(search) : -1;
@@ -90,6 +93,12 @@ export class PlayersService {
       )`);
       whereArgs.push(sponsorId, sponsor, `%${sponsor}%`);
     }
+    // sponsor.playeridto = filleul, sponsor.playeridfrom = parrain.
+    if (relation === 'sponsored') {
+      conds.push('EXISTS (SELECT 1 FROM sponsor s WHERE s.playeridto = p.playerid)');
+    } else if (relation === 'sponsors') {
+      conds.push('EXISTS (SELECT 1 FROM sponsor s WHERE s.playeridfrom = p.playerid)');
+    }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
     // ORDER BY sécurisé (whitelist) : défaut = plus récents.
@@ -98,6 +107,9 @@ export class PlayersService {
     if (sortBy === 'creation') orderBy = `p.creationts ${dir}`;
     else if (sortBy === 'solde') orderBy = `(COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) ${dir}`;
     else if (sortBy === 'cams') orderBy = `COALESCE(pa.cams, 0) ${dir}`;
+    else if (sortBy === 'filleuls') orderBy = `filleulCount ${dir}`;
+    // Le filtre « a des filleuls » se lit naturellement classé par nombre de filleuls décroissant.
+    else if (relation === 'sponsors') orderBy = 'filleulCount DESC';
 
     const items = await this.dataSource.query<PlayerRowDto[]>(
       `
@@ -105,6 +117,8 @@ export class PlayersService {
              p.creationts AS creationTs, p.endvipts AS endVipTs, p.toremove AS toRemove,
              p.sponsorcode AS sponsorCode,
              (COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) AS solde, COALESCE(pa.cams, 0) AS cams,
+             (SELECT COUNT(*) FROM sponsor s WHERE s.playeridfrom = p.playerid) AS filleulCount,
+             EXISTS(SELECT 1 FROM sponsor s WHERE s.playeridto = p.playerid) AS hasSponsor,
              EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid) AS siteBanned
       FROM player p
       JOIN playerinfos pi ON pi.playerid = p.playerid
@@ -127,6 +141,8 @@ export class PlayersService {
       it.toRemove = toBool(it.toRemove);
       it.solde = Number(it.solde);
       it.cams = Number(it.cams);
+      it.filleulCount = Number(it.filleulCount);
+      it.hasSponsor = toBool(it.hasSponsor);
     }
 
     return { items, total: totalRow[0]?.total ?? 0 };
