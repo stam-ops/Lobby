@@ -11,8 +11,9 @@ export class PlayerRowDto {
   @ApiProperty({ nullable: true, description: 'Code de parrainage (player.sponsorcode)' }) sponsorCode: string;
   @ApiProperty({ description: 'Solde total (amount + amountbonus)' }) solde: number;
   @ApiProperty({ description: "Crédits Cam's" }) cams: number;
-  @ApiProperty({ description: 'Notifications générales activées (0/1)' }) notifGeneral: number;
-  @ApiProperty({ description: 'Notifications perso activées (0/1)' }) notifPerso: number;
+  @ApiProperty({ description: 'Préférence in-app : notifications générales (0/1)' }) notifGeneral: number;
+  @ApiProperty({ description: 'Préférence in-app : notifications perso (0/1)' }) notifPerso: number;
+  @ApiProperty({ description: 'Autorisation OS iOS/Android reportée par le client (0/1)' }) notifOsGranted: number;
   @ApiProperty({ description: 'Nombre de filleuls (parrainages émis)' }) filleulCount: number;
   @ApiProperty({ nullable: true, description: 'Parrain (sponsor.playeridfrom), null si aucun' }) sponsorPlayerId: number | null;
   @ApiProperty({ nullable: true, description: 'Pseudo du parrain' }) sponsorScreenName: string | null;

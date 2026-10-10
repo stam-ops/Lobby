@@ -21,8 +21,10 @@ export interface PlayerListParams {
   sponsor?: string;
   /** 'sponsored' = a un parrain ; 'sponsors' = a au moins un filleul. */
   relation?: 'sponsored' | 'sponsors';
-  /** Notifications système : 'on' = au moins perso OU général active ; 'off' = aucune. */
+  /** Préférences in-app : 'on' = au moins perso OU général active ; 'off' = aucune. */
   notif?: 'on' | 'off';
+  /** Autorisation OS (playerinfos.notifosgranted) reportée par le client : accordée / refusée. */
+  notifOs?: 'granted' | 'denied';
   sortBy?: 'creation' | 'solde' | 'cams' | 'filleuls';
   sortDir: 'asc' | 'desc';
   limit: number;
@@ -63,7 +65,7 @@ export class PlayersService {
   async list(params: PlayerListParams): Promise<PlayerListDto> {
     const {
       search, type, removed, os, signInMethod, appVersion, sponsorCode, sponsor, relation, notif,
-      sortBy, sortDir, limit, offset,
+      notifOs, sortBy, sortDir, limit, offset,
     } = params;
     const like = `%${search}%`;
     const searchId = /^\d+$/.test(search) ? Number(search) : -1;
@@ -108,6 +110,9 @@ export class PlayersService {
     } else if (notif === 'off') {
       conds.push('(COALESCE(pi.notifgeneral, 0) = 0 AND COALESCE(pi.notifperso, 0) = 0)');
     }
+    // Autorisation système (OS) reportée par le client.
+    if (notifOs === 'granted') conds.push('pi.notifosgranted = 1');
+    else if (notifOs === 'denied') conds.push('pi.notifosgranted = 0');
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
     // ORDER BY sécurisé (whitelist) : défaut = plus récents.
@@ -127,6 +132,7 @@ export class PlayersService {
              p.sponsorcode AS sponsorCode,
              (COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) AS solde, COALESCE(pa.cams, 0) AS cams,
              pi.notifgeneral AS notifGeneral, pi.notifperso AS notifPerso,
+             pi.notifosgranted AS notifOsGranted,
              (SELECT COUNT(*) FROM sponsor s WHERE s.playeridfrom = p.playerid) AS filleulCount,
              (SELECT s.playeridfrom FROM sponsor s WHERE s.playeridto = p.playerid LIMIT 1) AS sponsorPlayerId,
              (SELECT spi.screenname FROM sponsor s JOIN playerinfos spi ON spi.playerid = s.playeridfrom
@@ -173,6 +179,7 @@ export class PlayersService {
              pi.tokenfb AS tokenFb, pi.tokenios AS tokenIos,
              pi.lastrate AS lastRate, pi.lastopinion AS lastOpinion,
              pi.notifgeneral AS notifGeneral, pi.notifperso AS notifPerso,
+             pi.notifosgranted AS notifOsGranted,
              pa.amount AS amount, pa.amountbonus AS amountBonus, COALESCE(pa.cams, 0) AS cams,
              EXISTS(SELECT 1 FROM blacklist b WHERE b.playerid = p.playerid)                                        AS siteBanned,
              EXISTS(SELECT 1 FROM bannedplayer bp WHERE bp.playerid = p.playerid AND (bp.endts = 0 OR bp.endts IS NULL)) AS chatBanned,
