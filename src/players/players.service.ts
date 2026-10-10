@@ -21,6 +21,8 @@ export interface PlayerListParams {
   sponsor?: string;
   /** 'sponsored' = a un parrain ; 'sponsors' = a au moins un filleul. */
   relation?: 'sponsored' | 'sponsors';
+  /** Notifications système : 'on' = au moins perso OU général active ; 'off' = aucune. */
+  notif?: 'on' | 'off';
   sortBy?: 'creation' | 'solde' | 'cams' | 'filleuls';
   sortDir: 'asc' | 'desc';
   limit: number;
@@ -60,7 +62,7 @@ export class PlayersService {
 
   async list(params: PlayerListParams): Promise<PlayerListDto> {
     const {
-      search, type, removed, os, signInMethod, appVersion, sponsorCode, sponsor, relation,
+      search, type, removed, os, signInMethod, appVersion, sponsorCode, sponsor, relation, notif,
       sortBy, sortDir, limit, offset,
     } = params;
     const like = `%${search}%`;
@@ -99,6 +101,13 @@ export class PlayersService {
     } else if (relation === 'sponsors') {
       conds.push('EXISTS (SELECT 1 FROM sponsor s WHERE s.playeridfrom = p.playerid)');
     }
+    // Notifications système : « activées » = au moins l'une des deux à 1. COALESCE pour traiter
+    // un NULL éventuel comme « désactivé ».
+    if (notif === 'on') {
+      conds.push('(COALESCE(pi.notifgeneral, 0) = 1 OR COALESCE(pi.notifperso, 0) = 1)');
+    } else if (notif === 'off') {
+      conds.push('(COALESCE(pi.notifgeneral, 0) = 0 AND COALESCE(pi.notifperso, 0) = 0)');
+    }
     const where = conds.length ? `WHERE ${conds.join(' AND ')}` : '';
 
     // ORDER BY sécurisé (whitelist) : défaut = plus récents.
@@ -117,6 +126,7 @@ export class PlayersService {
              p.creationts AS creationTs, p.endvipts AS endVipTs, p.toremove AS toRemove,
              p.sponsorcode AS sponsorCode,
              (COALESCE(pa.amount, 0) + COALESCE(pa.amountbonus, 0)) AS solde, COALESCE(pa.cams, 0) AS cams,
+             pi.notifgeneral AS notifGeneral, pi.notifperso AS notifPerso,
              (SELECT COUNT(*) FROM sponsor s WHERE s.playeridfrom = p.playerid) AS filleulCount,
              (SELECT s.playeridfrom FROM sponsor s WHERE s.playeridto = p.playerid LIMIT 1) AS sponsorPlayerId,
              (SELECT spi.screenname FROM sponsor s JOIN playerinfos spi ON spi.playerid = s.playeridfrom

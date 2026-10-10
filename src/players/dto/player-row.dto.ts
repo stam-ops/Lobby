@@ -11,6 +11,8 @@ export class PlayerRowDto {
   @ApiProperty({ nullable: true, description: 'Code de parrainage (player.sponsorcode)' }) sponsorCode: string;
   @ApiProperty({ description: 'Solde total (amount + amountbonus)' }) solde: number;
   @ApiProperty({ description: "Crédits Cam's" }) cams: number;
+  @ApiProperty({ description: 'Notifications générales activées (0/1)' }) notifGeneral: number;
+  @ApiProperty({ description: 'Notifications perso activées (0/1)' }) notifPerso: number;
   @ApiProperty({ description: 'Nombre de filleuls (parrainages émis)' }) filleulCount: number;
   @ApiProperty({ nullable: true, description: 'Parrain (sponsor.playeridfrom), null si aucun' }) sponsorPlayerId: number | null;
   @ApiProperty({ nullable: true, description: 'Pseudo du parrain' }) sponsorScreenName: string | null;
@@ -38,9 +40,7 @@ export class PlayerDetailDto extends PlayerRowDto {
   @ApiProperty({ nullable: true, description: 'Token push iOS/APNs' }) tokenIos: string;
   @ApiProperty({ nullable: true }) lastRate: string;
   @ApiProperty({ nullable: true }) lastOpinion: string;
-  @ApiProperty({ description: 'Notifications générales activées (0/1)' }) notifGeneral: number;
-  @ApiProperty({ description: 'Notifications perso activées (0/1)' }) notifPerso: number;
-  // sponsorPlayerId / sponsorScreenName : hérités de PlayerRowDto (affichés aussi dans la liste).
+  // notifGeneral / notifPerso / sponsorPlayerId / sponsorScreenName : hérités de PlayerRowDto.
   @ApiProperty({ nullable: true, description: 'Solde jetons (playeraccount.amount)' }) amount: number;
   @ApiProperty({ nullable: true, description: 'Solde bonus (playeraccount.amountbonus)' }) amountBonus: number;
   @ApiProperty({ nullable: true, description: "Crédits Cam's (playeraccount.cams)" }) cams: number;

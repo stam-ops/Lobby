@@ -30,6 +30,7 @@ export class PlayersController {
   @ApiQuery({ name: 'sponsorCode', required: false, description: 'Code de parrainage exact du joueur' })
   @ApiQuery({ name: 'sponsor', required: false, description: 'Parrain : playerId, code ou pseudo' })
   @ApiQuery({ name: 'relation', required: false, enum: ['sponsored', 'sponsors'], description: 'sponsored = a un parrain ; sponsors = a des filleuls' })
+  @ApiQuery({ name: 'notif', required: false, enum: ['on', 'off'], description: 'on = notif perso OU générale active ; off = aucune' })
   @ApiQuery({ name: 'sortBy', required: false, enum: ['creation', 'solde', 'cams', 'filleuls'] })
   @ApiQuery({ name: 'sortDir', required: false, enum: ['asc', 'desc'] })
   @ApiQuery({ name: 'limit', required: false })
@@ -45,6 +46,7 @@ export class PlayersController {
     @Query('sponsorCode', new DefaultValuePipe('')) sponsorCode: string,
     @Query('sponsor', new DefaultValuePipe('')) sponsor: string,
     @Query('relation') relation: 'sponsored' | 'sponsors',
+    @Query('notif') notif: 'on' | 'off',
     @Query('sortBy') sortBy: 'creation' | 'solde' | 'cams' | 'filleuls',
     @Query('sortDir') sortDir: 'asc' | 'desc',
     @Query('limit', new DefaultValuePipe(50), ParseIntPipe) limit: number,
@@ -65,6 +67,7 @@ export class PlayersController {
       sponsorCode: sponsorCode.trim() || undefined,
       sponsor: sponsor.trim() || undefined,
       relation: ['sponsored', 'sponsors'].includes(relation) ? relation : undefined,
+      notif: ['on', 'off'].includes(notif) ? notif : undefined,
       sortBy: ['creation', 'solde', 'cams', 'filleuls'].includes(sortBy) ? sortBy : undefined,
       sortDir: sortDir === 'asc' ? 'asc' : 'desc',
       limit: Math.min(limit, 200),
