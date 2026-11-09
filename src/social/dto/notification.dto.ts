@@ -43,4 +43,11 @@ export class NotificationDto {
 
   @ApiProperty({ required: false, description: 'Nombre de joueurs (notif résultat 13/14)' })
   resultNbPlayers?: number;
+
+  // Notif chanceLink (type 23) — rendus seulement au joueur lui-même (session = :playerId), null sinon.
+  @ApiProperty({ required: false, example: '123456', description: 'Code de liaison au Chance-o-mètre (notif 23)' })
+  chanceCode?: string;
+
+  @ApiProperty({ required: false, description: 'Fin de validité du code, ISO 8601 (notif 23)' })
+  chanceExpiresTs?: string;
 }

@@ -1,5 +1,8 @@
 import { Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import { AuthUser } from '../auth/auth.types';
+import { CHANCE_LINK_NOTIF_TYPE, chanceTable } from '../chance/chance-db';
 import { NotificationDto } from './dto/notification.dto';
 import { PlayerInfoDto, FriendDto, TournamentResultDto, PlayerStatsDto } from './dto/player-info.dto';
 
@@ -7,17 +10,26 @@ import { PlayerInfoDto, FriendDto, TournamentResultDto, PlayerStatsDto } from '.
 // Inclut les bonus dédiés RÉCLAMABLES (NotificationType) : welcomeBonus(5), dailyBonus(6),
 // monthlyBonus(7), specialBonus(8), shareBonus(9), camBonus(18), newFilleul(11), newSponsor(12)
 // → filtrés par isconsumed=0 donc disparaissent une fois réclamés (giveBonus les consomme).
-const MANDATORY_NOTIF_TYPES = [1, 5, 6, 7, 8, 9, 11, 12, 18, 19, 20, 21];
+// chanceLink(23) : code de liaison au Chance-o-mètre, consommé quand il est utilisé, remplacé ou expiré.
+const MANDATORY_NOTIF_TYPES = [1, 5, 6, 7, 8, 9, 11, 12, 18, 19, 20, 21, CHANCE_LINK_NOTIF_TYPE];
 
 @Injectable()
 export class SocialService {
-  constructor(private readonly dataSource: DataSource) {}
+  private readonly links: string;
+
+  constructor(private readonly dataSource: DataSource, config: ConfigService) {
+    this.links = chanceTable(config, 'chancelink');
+  }
 
   // Source: Social.java → getPlayerNotifications(playerId, nbMaxNotifs)
   // Enrichi (cf. NotifationRow.InvitationNotifInfos legacy) : pour les demandes d'ami, on
   // joint friendrelation → playerinfos pour renvoyer l'AUTRE joueur (fromPlayerId/fromScreenName) :
   //   askFriendReceived → le demandeur ; askFriendAnswerReceived → celui qui a accepté.
-  async getPlayerNotifications(playerId: number, nbMaxNotifs: number): Promise<NotificationDto[]> {
+  //
+  // `caller` : identité de l'appelant (AuthGuard). Le code de liaison au Chance-o-mètre n'est ajouté que
+  // si l'appelant EST ce joueur : la route ne vérifie pas que :playerId est celui de la session, et ce code
+  // permet de relier son compte Campok (donc de lire ses mains) depuis le Chance-o-mètre.
+  async getPlayerNotifications(playerId: number, nbMaxNotifs: number, caller?: AuthUser): Promise<NotificationDto[]> {
     const SELECT = `
       SELECT n.notificationid AS notificationId, n.notificationtype AS notificationType,
              n.isread AS isRead, n.isconsumed AS isConsumed,
@@ -61,7 +73,8 @@ export class SocialService {
       `, [playerId, nbMaxNotifs]),
     ]);
 
-    const notifs = [...mandatory, ...optional];
+    let notifs = [...mandatory, ...optional];
+    notifs = await this.withChanceLinkCodes(notifs, caller?.kind === 'player' && Number(caller.playerId) === playerId);
 
     // Enrichissement des notifs de RÉSULTAT de tournoi (13) / SNG (14) avec rang / gain / label /
     // nb joueurs (cf. legacy Social.getResultTournamentInfos / getResultSNGInfos). `rank` = mot
@@ -110,6 +123,40 @@ export class SocialService {
     }
 
     return notifs;
+  }
+
+  /**
+   * Notifications chanceLink (23) : code et expiration ajoutés pour le joueur lui-même (`own`) ; celles dont
+   * le code ne vaut plus rien (expiré, utilisé, remplacé) sont consommées et retirées de la liste. Base des
+   * comptes absente ou illisible : notifications rendues telles quelles, sans code.
+   */
+  private async withChanceLinkCodes(notifs: NotificationDto[], own: boolean): Promise<NotificationDto[]> {
+    const ids = notifs.filter((n) => Number(n.notificationType) === CHANCE_LINK_NOTIF_TYPE).map((n) => Number(n.notificationId));
+    if (!ids.length) return notifs;
+    const ph = ids.map(() => '?').join(',');
+    const rows = await this.dataSource.query<{ id: number; code: string; expirests: Date }[]>(`
+      SELECT notificationid AS id, code, expirests FROM ${this.links}
+      WHERE notificationid IN (${ph}) AND usedts IS NULL AND code IS NOT NULL AND expirests > NOW()
+    `, ids).catch(() => null);
+    if (!rows) return notifs;
+    type LinkRow = { id: number; code: string; expirests: Date };
+    const byId = new Map<number, LinkRow>((rows as LinkRow[]).map((r) => [Number(r.id), r]));
+    const dead = ids.filter((id) => !byId.has(id));
+    if (dead.length) {
+      await this.dataSource.query(
+        `UPDATE notification SET isconsumed = 1 WHERE notificationid IN (${dead.map(() => '?').join(',')})`, dead,
+      ).catch(() => undefined);
+    }
+    return notifs.filter((n) => {
+      if (Number(n.notificationType) !== CHANCE_LINK_NOTIF_TYPE) return true;
+      const r = byId.get(Number(n.notificationId));
+      if (!r) return false;
+      if (own) {
+        n.chanceCode = r.code;
+        n.chanceExpiresTs = new Date(r.expirests).toISOString();
+      }
+      return true;
+    });
   }
 
   // Source: Social.java → getPlayerInfos(playerIdFrom, startScreenName, max)

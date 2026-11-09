@@ -9,6 +9,8 @@ import { createHmac, randomBytes, randomInt, timingSafeEqual } from 'crypto';
 import { MailService } from '../organizers/mail.service';
 import { CaptchaService } from '../organizers/captcha.service';
 import { MailjetService } from './mailjet.service';
+import { FcmService } from './fcm.service';
+import { CHANCE_LINK_NOTIF_TYPE, chanceTable } from './chance-db';
 import { ChanceMail, deleteMail, loginMail, noAccountMail, signupMail } from './chance-mails';
 
 /** Durée de validité d'un lien ou d'un code reçu par e-mail. */
@@ -25,6 +27,18 @@ const REFRESH_AFTER_S = 24 * 3600;
 const SESSION_PURPOSE = 'chance-session';
 const SECRET_MIN = 32;
 
+/** Liaison Campok (offre 2) : validité du code reçu dans l'app, essais, limites. */
+export const LINK_CODE_MINUTES = 10;
+/** Demandes de code par compte du Chance-o-mètre et par heure : au-delà, 429. */
+export const LINK_PER_USER_HOUR = 5;
+/** Codes envoyés à un même joueur Campok par heure : au-delà, rien n'est envoyé (sans le dire). */
+export const LINK_PER_PLAYER_HOUR = 3;
+
+const LINK_SENT = {
+  message: `Si ce pseudo existe, ton code de liaison s’affiche dans les notifications de l’app Campok (valable ${LINK_CODE_MINUTES} minutes).`,
+};
+const BAD_CODE = 'Code invalide ou expiré : demande un nouveau code.';
+
 /** Réponse identique que l'adresse ait un compte, n'en ait pas ou ait atteint sa limite. */
 const SENT = { message: 'Si l’adresse est valide, un e-mail vient de t’être envoyé.' };
 const BAD_LINK = 'Lien ou code invalide ou expiré : demande un nouveau lien.';
@@ -39,7 +53,11 @@ interface UserRow {
   creationts: Date;
 }
 
-export interface ChanceProfile { id: number; email: string; creationTs: Date; newsletter: boolean; campok: boolean }
+export interface ChanceProfile {
+  id: number; email: string; creationTs: Date; newsletter: boolean; campok: boolean;
+  /** Pseudo du compte Campok relié (offre 2), null sinon. */
+  campokName: string | null;
+}
 
 export function normEmail(email: unknown): string {
   const e = typeof email === 'string' ? email.trim().toLowerCase() : '';
@@ -68,6 +86,7 @@ export class ChanceService {
   private readonly logger = new Logger(ChanceService.name);
   private readonly users: string;
   private readonly logins: string;
+  private readonly links: string;
   private readonly tokenSecret: string;
   private readonly sessionSecret: string;
   private readonly publicUrl: string;
@@ -79,13 +98,12 @@ export class ChanceService {
     private readonly mail: MailService,
     private readonly mailjet: MailjetService,
     private readonly captcha: CaptchaService,
+    private readonly fcm: FcmService,
     config: ConfigService,
   ) {
-    // Nom de base concaténé dans le SQL (une base ne se passe pas en paramètre) : vérifié ici.
-    const db = config.get<string>('CHANCE_DB', 'chance');
-    if (!/^[a-z][a-z0-9_]{0,63}$/.test(db)) throw new Error(`CHANCE_DB invalide : ${db}`);
-    this.users = `\`${db}\`.chanceuser`;
-    this.logins = `\`${db}\`.chancelogin`;
+    this.users = chanceTable(config, 'chanceuser');
+    this.logins = chanceTable(config, 'chancelogin');
+    this.links = chanceTable(config, 'chancelink');
     this.tokenSecret = config.get<string>('CHANCE_TOKEN_SECRET', '');
     this.sessionSecret = config.get<string>('CHANCE_SESSION_SECRET', '');
     this.publicUrl = config.get<string>('CHANCE_PUBLIC_URL', 'http://localhost:5174').replace(/\/+$/, '');
@@ -200,7 +218,7 @@ export class ChanceService {
     });
     if (!done) throw new BadRequestException(BAD_LINK);
     if (done.created && done.user.newsletter) await this.mailjet.subscribe(done.user.email);
-    return { session: await this.sign(done.user), user: this.profile(done.user), created: done.created };
+    return { session: await this.sign(done.user), user: await this.profile(done.user), created: done.created };
   }
 
   // ─── Compte (session du visiteur) ─────────────────────────────────────────────────────────────
@@ -208,9 +226,9 @@ export class ChanceService {
   /** Profil ; `session` renouvelée (30 jours de plus) si la précédente a plus d'un jour. */
   async me(session: string | undefined) {
     const { user, iat } = await this.fromSession(session);
-    if (Date.now() / 1000 - iat < REFRESH_AFTER_S) return { user: this.profile(user) };
+    if (Date.now() / 1000 - iat < REFRESH_AFTER_S) return { user: await this.profile(user) };
     await this.dataSource.query(`UPDATE ${this.users} SET lastlogints = NOW() WHERE chanceuserid = ?`, [user.chanceuserid]);
-    return { user: this.profile(user), session: await this.sign(user) };
+    return { user: await this.profile(user), session: await this.sign(user) };
   }
 
   async update(session: string | undefined, dto: { newsletter: boolean }) {
@@ -224,7 +242,98 @@ export class ChanceService {
       await (wanted ? this.mailjet.subscribe(user.email) : this.mailjet.unsubscribe(user.email));
       user.newsletter = wanted ? 1 : 0;
     }
-    return { user: this.profile(user) };
+    return { user: await this.profile(user) };
+  }
+
+  // ─── Liaison au compte Campok (offre 2) ───────────────────────────────────────────────────────
+
+  /**
+   * Demande de code : notification interne (type chanceLink) insérée pour le joueur Campok de ce pseudo,
+   * avec le code ; push en plus si son téléphone l'accepte. Réponse identique que le pseudo existe ou non.
+   * Une nouvelle demande annule les précédentes du même compte (leurs notifications disparaissent).
+   */
+  async requestCampokLink(session: string | undefined, dto: { pseudo: string; ip: string }) {
+    const { user } = await this.fromSession(session);
+    if (user.playerid != null) {
+      throw new HttpException('Ton compte est déjà relié à un compte Campok : délie-le d’abord.', HttpStatus.CONFLICT);
+    }
+    const pseudo = String(dto.pseudo ?? '').trim();
+    if (!pseudo || pseudo.length > 50) throw new BadRequestException('Pseudo Campok invalide.');
+    const ip = String(dto.ip ?? '').slice(0, 45);
+    await this.purge();
+    const tooMany = 'Trop de demandes : réessaie dans une heure.';
+    if (ip && (await this.countLinks('ip = ?', [ip])) >= PER_IP_HOUR) throw new HttpException(tooMany, HttpStatus.TOO_MANY_REQUESTS);
+    if ((await this.countLinks('chanceuserid = ?', [user.chanceuserid])) >= LINK_PER_USER_HOUR) {
+      throw new HttpException(tooMany, HttpStatus.TOO_MANY_REQUESTS);
+    }
+
+    const player = await this.playerByPseudo(pseudo);
+    // Pas plus de quelques codes par heure chez un même joueur, quel que soit le demandeur : on ne remplit
+    // pas les notifications de quelqu'un dont on connaît le pseudo.
+    const send = player != null && (await this.countLinks('playerid = ? AND code IS NOT NULL', [player.playerid])) < LINK_PER_PLAYER_HOUR;
+    const code = String(randomInt(0, 1_000_000)).padStart(6, '0');
+    await this.dataSource.transaction(async (tx) => {
+      await this.dropPendingLinks(tx, user.chanceuserid);
+      let notificationId: number | null = null;
+      if (send) {
+        const r = await tx.query(
+          'INSERT INTO notification (notificationtype, playerid) VALUES (?, ?)', [CHANCE_LINK_NOTIF_TYPE, player.playerid],
+        );
+        notificationId = Number(r.insertId);
+      }
+      await tx.query(
+        `INSERT INTO ${this.links} (chanceuserid, playerid, code, notificationid, ip, expirests)
+         VALUES (?, ?, ?, ?, ?, NOW() + INTERVAL ${LINK_CODE_MINUTES} MINUTE)`,
+        [user.chanceuserid, player?.playerid ?? null, send ? code : null, notificationId, ip],
+      );
+    });
+    if (send) await this.pushLinkCode(player.playerid, code);
+    return LINK_SENT;
+  }
+
+  /** Code tapé sur la page → compte relié. Le joueur passe d'un compte à l'autre s'il était déjà relié ailleurs. */
+  async confirmCampokLink(session: string | undefined, dto: { code: string }) {
+    const { user } = await this.fromSession(session);
+    // Pas d'exception dans la transaction : un code faux doit quand même compter comme un essai.
+    const linked = await this.dataSource.transaction(async (tx) => {
+      const [row] = await tx.query<{ id: number; playerid: number; code: string; notificationid: number | null; attempts: number }[]>(
+        `SELECT chancelinkid AS id, playerid, code, notificationid, attempts FROM ${this.links}
+         WHERE chanceuserid = ? AND usedts IS NULL AND code IS NOT NULL AND expirests > NOW()
+           AND attempts < ${CODE_ATTEMPTS}
+         ORDER BY chancelinkid DESC LIMIT 1 FOR UPDATE`,
+        [user.chanceuserid],
+      );
+      if (!row) return false;
+      const ok = typeof dto.code === 'string' && dto.code.length === 6
+        && timingSafeEqual(Buffer.from(dto.code), Buffer.from(String(row.code)));
+      if (!ok) {
+        await tx.query(`UPDATE ${this.links} SET attempts = attempts + 1 WHERE chancelinkid = ?`, [row.id]);
+        if (Number(row.attempts) + 1 >= CODE_ATTEMPTS) await this.dropPendingLinks(tx, user.chanceuserid);
+        return false;
+      }
+      await tx.query(
+        `UPDATE ${this.users} SET playerid = NULL, linkts = NULL WHERE playerid = ? AND chanceuserid <> ?`,
+        [row.playerid, user.chanceuserid],
+      );
+      await tx.query(
+        `UPDATE ${this.users} SET playerid = ?, linkts = NOW() WHERE chanceuserid = ?`, [row.playerid, user.chanceuserid],
+      );
+      await this.dropPendingLinks(tx, user.chanceuserid);
+      user.playerid = row.playerid;
+      return true;
+    });
+    if (!linked) throw new BadRequestException(BAD_CODE);
+    return { user: await this.profile(user) };
+  }
+
+  /** Délie le compte Campok. */
+  async unlinkCampok(session: string | undefined) {
+    const { user } = await this.fromSession(session);
+    await this.dataSource.query(
+      `UPDATE ${this.users} SET playerid = NULL, linkts = NULL WHERE chanceuserid = ?`, [user.chanceuserid],
+    );
+    user.playerid = null;
+    return { user: await this.profile(user) };
   }
 
   /** « Se déconnecter partout » : toutes les sessions de ce compte deviennent invalides. */
@@ -347,11 +456,69 @@ export class ChanceService {
     return u;
   }
 
-  private profile(u: UserRow): ChanceProfile {
+  private async profile(u: UserRow): Promise<ChanceProfile> {
+    let campokName: string | null = null;
+    if (u.playerid != null) {
+      const [p] = await this.dataSource.query<{ screenname: string }[]>(
+        'SELECT screenname FROM playerinfos WHERE playerid = ?', [u.playerid],
+      );
+      campokName = p?.screenname ?? null;
+    }
     return {
       id: u.chanceuserid, email: u.email, creationTs: u.creationts,
-      newsletter: !!u.newsletter, campok: u.playerid != null,
+      newsletter: !!u.newsletter, campok: u.playerid != null, campokName,
     };
+  }
+
+  /** Joueur Campok de ce pseudo (casse exacte d'abord, sinon selon la collation de la base). */
+  private async playerByPseudo(pseudo: string): Promise<{ playerid: number } | null> {
+    const rows = await this.dataSource.query<{ playerid: number; screenname: string }[]>(
+      'SELECT playerid, screenname FROM playerinfos WHERE screenname = ? LIMIT 5', [pseudo],
+    );
+    const p = rows.find((r) => r.screenname === pseudo) ?? (rows.length === 1 ? rows[0] : undefined);
+    return p ? { playerid: Number(p.playerid) } : null;
+  }
+
+  private async countLinks(where: string, args: unknown[]): Promise<number> {
+    const [r] = await this.dataSource.query<{ n: string | number }[]>(
+      `SELECT COUNT(*) AS n FROM ${this.links} WHERE ${where} AND creationts > NOW() - INTERVAL 1 HOUR`, args,
+    );
+    return Number(r.n);
+  }
+
+  /** Table des codes de liaison présente (sql/003 passé) ? MySQL : une erreur n'annule pas la transaction. */
+  private async hasLinkTable(tx: EntityManager): Promise<boolean> {
+    try {
+      await tx.query(`SELECT 1 FROM ${this.links} LIMIT 0`);
+      return true;
+    } catch {
+      return false;
+    }
+  }
+
+  /** Demandes de code encore en attente de ce compte : annulées, et leurs notifications consommées. */
+  private async dropPendingLinks(tx: EntityManager, chanceuserid: number) {
+    await tx.query(
+      `UPDATE notification n JOIN ${this.links} l ON l.notificationid = n.notificationid
+       SET n.isconsumed = 1 WHERE l.chanceuserid = ? AND l.usedts IS NULL`,
+      [chanceuserid],
+    );
+    await tx.query(
+      `UPDATE ${this.links} SET usedts = NOW(), code = NULL WHERE chanceuserid = ? AND usedts IS NULL`, [chanceuserid],
+    );
+  }
+
+  /** Push en plus de la notification interne, seulement si le téléphone l'affichera (jeton et autorisation). */
+  private async pushLinkCode(playerId: number, code: string) {
+    if (!this.fcm.enabled) return;
+    const [p] = await this.dataSource.query<{ tokenfb: string | null; notifosgranted: number | null }[]>(
+      'SELECT tokenfb, notifosgranted FROM playerinfos WHERE playerid = ?', [playerId],
+    ).catch(() => [] as { tokenfb: string | null; notifosgranted: number | null }[]);
+    if (!p?.tokenfb || Number(p.notifosgranted) !== 1) return;
+    await this.fcm.send(
+      p.tokenfb, 'Code de liaison Chance-o-mètre',
+      `Ton code : ${code} (valable ${LINK_CODE_MINUTES} minutes). Ne le donne à personne.`,
+    );
   }
 
   private sign(u: UserRow): Promise<string> {
@@ -386,6 +553,10 @@ export class ChanceService {
     const id = await this.dataSource.transaction(async (tx) => {
       const user = await this.userByEmail(tx, email);
       if (!user) return null;
+      if (await this.hasLinkTable(tx)) {
+        await this.dropPendingLinks(tx, user.chanceuserid);
+        await tx.query(`DELETE FROM ${this.links} WHERE chanceuserid = ?`, [user.chanceuserid]);
+      }
       await tx.query(`DELETE FROM ${this.users} WHERE chanceuserid = ?`, [user.chanceuserid]);
       await tx.query(`DELETE FROM ${this.logins} WHERE email = ?`, [email]);
       return user.chanceuserid;
@@ -413,9 +584,23 @@ export class ChanceService {
     return false;
   }
 
-  /** Demandes de plus de 7 jours : inutiles (liens expirés, limites horaires passées). */
-  private purge() {
-    return this.dataSource.query(`DELETE FROM ${this.logins} WHERE creationts < NOW() - INTERVAL 7 DAY`);
+  /**
+   * Demandes de plus de 7 jours : inutiles (liens expirés, limites horaires passées). Codes de liaison
+   * expirés : effacés, et leurs notifications consommées (elles disparaissent de l'app).
+   */
+  private async purge() {
+    await this.dataSource.query(`DELETE FROM ${this.logins} WHERE creationts < NOW() - INTERVAL 7 DAY`);
+    try {
+      await this.dataSource.query(
+        `UPDATE notification n JOIN ${this.links} l ON l.notificationid = n.notificationid
+         SET n.isconsumed = 1, l.code = NULL, l.usedts = NOW()
+         WHERE l.usedts IS NULL AND l.expirests <= NOW()`,
+      );
+      await this.dataSource.query(`DELETE FROM ${this.links} WHERE creationts < NOW() - INTERVAL 7 DAY`);
+    } catch (e) {
+      // Table chancelink absente (sql/003 pas encore passé) : la connexion par e-mail doit continuer à marcher.
+      this.logger.error(`Purge des codes de liaison impossible : ${e instanceof Error ? e.message : String(e)}`);
+    }
   }
 
   private async send(to: string, m: ChanceMail) {

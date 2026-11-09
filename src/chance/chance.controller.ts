@@ -3,7 +3,8 @@ import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger
 import { Auth } from '../auth/auth.decorator';
 import { ChanceService } from './chance.service';
 import {
-  ChanceIpDto, ChanceLoginConfirmDto, ChanceLoginRequestDto, ChanceTokenDto, ChanceUpdateDto,
+  ChanceCampokConfirmDto, ChanceCampokRequestDto, ChanceIpDto, ChanceLoginConfirmDto, ChanceLoginRequestDto,
+  ChanceTokenDto, ChanceUpdateDto,
 } from './dto/chance.dto';
 
 const SESSION_HEADER = 'x-chance-session';
@@ -55,6 +56,30 @@ export class ChanceController {
   @ApiOperation({ summary: 'Se déconnecter partout : toutes les sessions du compte tombent' })
   logoutAll(@Headers(SESSION_HEADER) session: string) {
     return this.chance.logoutAll(session);
+  }
+
+  @Post('campok/request')
+  @HttpCode(200)
+  @ApiHeader({ name: SESSION_HEADER })
+  @ApiOperation({ summary: 'Code de liaison envoyé en notification interne (et push) au joueur Campok de ce pseudo' })
+  requestCampokLink(@Headers(SESSION_HEADER) session: string, @Body() dto: ChanceCampokRequestDto) {
+    return this.chance.requestCampokLink(session, dto);
+  }
+
+  @Post('campok/confirm')
+  @HttpCode(200)
+  @ApiHeader({ name: SESSION_HEADER })
+  @ApiOperation({ summary: 'Code tapé sur la page → compte Campok relié (offre 2)' })
+  confirmCampokLink(@Headers(SESSION_HEADER) session: string, @Body() dto: ChanceCampokConfirmDto) {
+    return this.chance.confirmCampokLink(session, dto);
+  }
+
+  @Post('campok/unlink')
+  @HttpCode(200)
+  @ApiHeader({ name: SESSION_HEADER })
+  @ApiOperation({ summary: 'Délie le compte Campok' })
+  unlinkCampok(@Headers(SESSION_HEADER) session: string) {
+    return this.chance.unlinkCampok(session);
   }
 
   @Post('delete/request')

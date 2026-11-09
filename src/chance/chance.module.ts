@@ -5,6 +5,7 @@ import { ChanceController } from './chance.controller';
 import { ChanceAdminController } from './chance-admin.controller';
 import { ChanceService } from './chance.service';
 import { MailjetService } from './mailjet.service';
+import { FcmService } from './fcm.service';
 
 /**
  * Comptes du Chance-o-mètre (sql/002_chance.sql). JwtModule sans secret : les sessions sont signées
@@ -14,6 +15,6 @@ import { MailjetService } from './mailjet.service';
 @Module({
   imports: [JwtModule.register({}), OrganizersModule],
   controllers: [ChanceController, ChanceAdminController],
-  providers: [ChanceService, MailjetService],
+  providers: [ChanceService, MailjetService, FcmService],
 })
 export class ChanceModule {}

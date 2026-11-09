@@ -73,3 +73,21 @@ export class ChanceTokenDto {
   @Matches(TOKEN_RE)
   token: string;
 }
+
+export class ChanceCampokRequestDto {
+  @ApiProperty({ example: 'Joueur42', description: 'Pseudo du compte Campok à relier' })
+  @IsString()
+  @MaxLength(50)
+  pseudo: string;
+
+  @ApiProperty({ description: 'Adresse IP du visiteur' })
+  @IsString()
+  @MaxLength(45)
+  ip: string;
+}
+
+export class ChanceCampokConfirmDto {
+  @ApiProperty({ example: '123456', description: 'Code à 6 chiffres affiché dans les notifications de l’app Campok' })
+  @Matches(/^\d{6}$/)
+  code: string;
+}

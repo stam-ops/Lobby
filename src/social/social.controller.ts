@@ -1,4 +1,6 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
+import { CurrentUser } from '../auth/current-user.decorator';
+import { AuthUser } from '../auth/auth.types';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth } from '../auth/auth.decorator';
 import { SocialService } from './social.service';
@@ -20,8 +22,9 @@ export class SocialController {
   getPlayerNotifications(
     @Param('playerId', ParseIntPipe) playerId: number,
     @Query('max', new ParseIntPipe({ optional: true })) max = 20,
+    @CurrentUser() user?: AuthUser,
   ) {
-    return this.social.getPlayerNotifications(playerId, max);
+    return this.social.getPlayerNotifications(playerId, max, user);
   }
 
   @ApiOperation({ summary: 'Recherche joueurs par screenname (Social.java → getPlayerInfos)' })
