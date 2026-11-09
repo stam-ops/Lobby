@@ -1,0 +1,75 @@
+import { ApiProperty } from '@nestjs/swagger';
+import { IsBoolean, IsEmail, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+
+/** Lien reçu par e-mail : 32 octets aléatoires en base64url. */
+const TOKEN_RE = /^[\w-]{43}$/;
+
+export class ChanceLoginRequestDto {
+  @ApiProperty({ example: 'joueur@exemple.fr' })
+  @IsEmail()
+  @MaxLength(190)
+  email: string;
+
+  @ApiProperty({ description: 'Adresse IP du visiteur, vue par le serveur du Chance-o-mètre (limites)' })
+  @IsString()
+  @MaxLength(45)
+  ip: string;
+
+  @ApiProperty({ required: false, description: 'Jeton Turnstile du formulaire' })
+  @IsOptional()
+  @IsString()
+  @MaxLength(4096)
+  captchaToken?: string;
+
+  @ApiProperty({ required: false, description: 'Création de compte (sinon : connexion)' })
+  @IsOptional()
+  @IsBoolean()
+  signup?: boolean;
+
+  @ApiProperty({ required: false, description: '« J’ai 18 ans ou plus », obligatoire à la création' })
+  @IsOptional()
+  @IsBoolean()
+  adult?: boolean;
+
+  @ApiProperty({ required: false, description: 'Case « nouvelles », facultative' })
+  @IsOptional()
+  @IsBoolean()
+  newsletter?: boolean;
+}
+
+export class ChanceLoginConfirmDto {
+  @ApiProperty({ required: false, description: 'Jeton du lien reçu par e-mail' })
+  @IsOptional()
+  @Matches(TOKEN_RE)
+  token?: string;
+
+  @ApiProperty({ required: false, description: 'Adresse, avec le code (autre appareil)' })
+  @IsOptional()
+  @IsEmail()
+  @MaxLength(190)
+  email?: string;
+
+  @ApiProperty({ required: false, description: 'Code à 6 chiffres reçu par e-mail' })
+  @IsOptional()
+  @Matches(/^\d{6}$/)
+  code?: string;
+}
+
+export class ChanceUpdateDto {
+  @ApiProperty({ description: 'Inscription à la liste de nouvelles' })
+  @IsBoolean()
+  newsletter: boolean;
+}
+
+export class ChanceIpDto {
+  @ApiProperty({ description: 'Adresse IP du visiteur' })
+  @IsString()
+  @MaxLength(45)
+  ip: string;
+}
+
+export class ChanceTokenDto {
+  @ApiProperty({ description: 'Jeton du lien reçu par e-mail' })
+  @Matches(TOKEN_RE)
+  token: string;
+}

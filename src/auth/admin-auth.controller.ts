@@ -1,4 +1,5 @@
-import { Body, Controller, Get, Post } from '@nestjs/common';
+import { Body, Controller, Get, Post, UseGuards } from '@nestjs/common';
+import { Throttle, ThrottlerGuard } from '@nestjs/throttler';
 import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { AdminAuthService } from './admin-auth.service';
 import { AdminLoginDto, AdminLoginResponseDto } from './dto/admin-login.dto';
@@ -12,6 +13,10 @@ export class AdminAuthController {
   constructor(private readonly adminAuth: AdminAuthService) {}
 
   @Public()
+  // Limite par IP : sans elle, on peut essayer des mots de passe sans fin sur les comptes admin et
+  // organisateurs. Guard posé sur la route seulement (le ThrottlerGuard n'est pas global).
+  @UseGuards(ThrottlerGuard)
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @Post('login')
   @ApiOperation({ summary: 'Login backoffice — retourne un JWT' })
   @ApiResponse({ status: 200, type: AdminLoginResponseDto })

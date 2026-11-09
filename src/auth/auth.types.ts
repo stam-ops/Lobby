@@ -3,13 +3,20 @@
  *
  * Deux populations distinctes consomment LobbyWS :
  *  - 'player' : l'app React Native, authentifiée par le hash de session (table playersession).
- *  - 'admin'  : le backoffice, authentifié par JWT (table admin) — PAS encore implémenté.
+ *  - 'admin'  : le backoffice, authentifié par JWT (table backofficeuser).
+ *  - 'partner': le serveur du Chance-o-mètre, de serveur à serveur, par une clé partagée
+ *               (CHANCE_PARTNER_KEY). Il relaie les demandes de ses visiteurs (module chance) ; un
+ *               visiteur n'a jamais cette clé. Routes 'partner' toujours refusées sans elle, même en
+ *               mode log-only (cf. AuthGuard).
  */
 
-export type AuthAudience = 'player' | 'admin';
+export type AuthAudience = 'player' | 'admin' | 'partner';
 
 /** Clé de metadata posée par @Auth(...) sur un handler/contrôleur. */
 export const AUTH_KEY = 'auth:audiences';
+
+/** Clé de metadata posée par @Strict() : route refusée sans authentification même en mode log-only. */
+export const STRICT_KEY = 'auth:strict';
 
 /** Clé de metadata posée par @Public() : route accessible sans authentification. */
 export const PUBLIC_KEY = 'auth:public';

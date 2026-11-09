@@ -17,6 +17,6 @@ import { CaptchaService } from './captcha.service';
   imports: [JwtModule.register({})],
   controllers: [OrganizerSignupController, OrganizersAdminController],
   providers: [OrganizerSignupService, OrganizersAdminService, MailService, CaptchaService],
-  exports: [MailService],
+  exports: [MailService, CaptchaService], // repris par le module chance
 })
 export class OrganizersModule {}

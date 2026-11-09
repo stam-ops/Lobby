@@ -3,8 +3,12 @@ import { InjectRepository } from '@nestjs/typeorm';
 import { Repository } from 'typeorm';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
+import { randomBytes } from 'crypto';
 import { BackofficeUserEntity } from './entities/backoffice-user.entity';
 import { AdminJwtPayload, AdminRole } from './auth.types';
+
+/** Hash d'un mot de passe jetable, même coût que les vrais (10) : comparé quand l'adresse est inconnue. */
+const DUMMY_HASH = bcrypt.hashSync(randomBytes(16).toString('hex'), 10);
 
 @Injectable()
 export class AdminAuthService {
@@ -17,10 +21,10 @@ export class AdminAuthService {
   /** Vérifie email + mot de passe, retourne un JWT + le profil (sans le hash). 401 sinon. */
   async login(email: string, password: string) {
     const user = await this.users.findOne({ where: { email } });
-    if (!user || !user.active) throw new UnauthorizedException('Identifiants invalides');
-
-    const ok = await bcrypt.compare(password, user.password);
-    if (!ok) throw new UnauthorizedException('Identifiants invalides');
+    // bcrypt est TOUJOURS lancé, sur un hash factice si l'adresse est inconnue : sinon la réponse
+    // plus rapide pour une adresse inconnue laisserait deviner les comptes existants.
+    const ok = await bcrypt.compare(password, user?.password ?? DUMMY_HASH);
+    if (!user || !user.active || !ok) throw new UnauthorizedException('Identifiants invalides');
 
     await this.users.update(user.backofficeuserid, { lastlogints: new Date() });
 

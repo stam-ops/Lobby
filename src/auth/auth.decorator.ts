@@ -1,5 +1,5 @@
 import { SetMetadata } from '@nestjs/common';
-import { AdminRole, AuthAudience, AUTH_KEY, PUBLIC_KEY, ROLES_KEY } from './auth.types';
+import { AdminRole, AuthAudience, AUTH_KEY, PUBLIC_KEY, ROLES_KEY, STRICT_KEY } from './auth.types';
 
 /**
  * Restreint une route (ou un contrôleur entier) à une ou plusieurs populations.
@@ -14,6 +14,13 @@ import { AdminRole, AuthAudience, AUTH_KEY, PUBLIC_KEY, ROLES_KEY } from './auth
  */
 export const Auth = (...audiences: AuthAudience[]) =>
   SetMetadata(AUTH_KEY, audiences.length ? audiences : ['player']);
+
+/**
+ * Route TOUJOURS refusée sans authentification (401/403), même quand AUTH_ENFORCE n'est pas 'true'.
+ * Pour les routes nouvelles, qu'aucune version d'app en circulation n'appelle sans jeton, et celles
+ * qui exposent des données personnelles (adresses e-mail…). Les routes 'partner' le sont d'office.
+ */
+export const Strict = () => SetMetadata(STRICT_KEY, true);
 
 /** Route accessible sans authentification (bootstrap, load balancer, healthcheck...). */
 export const Public = () => SetMetadata(PUBLIC_KEY, true);

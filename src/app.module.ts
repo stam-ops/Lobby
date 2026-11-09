@@ -3,6 +3,7 @@ import { ConfigModule, ConfigService } from '@nestjs/config';
 import { TypeOrmModule } from '@nestjs/typeorm';
 import { ThrottlerModule } from '@nestjs/throttler';
 import { OrganizersModule } from './organizers/organizers.module';
+import { ChanceModule } from './chance/chance.module';
 import { LobbyModule } from './lobby/lobby.module';
 import { FrontModule } from './front/front.module';
 import { RankingModule } from './ranking/ranking.module';
@@ -72,6 +73,7 @@ import { BackofficeUserEntity } from './auth/entities/backoffice-user.entity';
     WebhooksModule,
     WebrtcModule,
     OrganizersModule,
+    ChanceModule,
     // Limite par défaut très large : on ne veut PAS brider l'app (le lobby interroge fréquemment).
     // Les routes publiques sensibles resserrent la limite avec @Throttle. Le ThrottlerGuard n'est
     // volontairement pas global : seules les routes annotées sont limitées.
