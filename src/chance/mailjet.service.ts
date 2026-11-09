@@ -61,7 +61,8 @@ export class MailjetService {
     if (!this.auth) return this.log(action, email);
     try {
       const res = await this.call('POST', `/v3/REST/contactslist/${this.listId}/managecontact`, { Email: email, Action: action });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      // 404 : liste MAILJET_LIST_ID introuvable pour ces clés (mauvais ID, ou liste d'un autre compte / sous-compte).
+      if (!res.ok) throw new Error(`HTTP ${res.status} (liste ${this.listId}) : ${(await res.text().catch(() => '')).slice(0, 300)}`);
       return true;
     } catch (e) {
       this.logger.error(`Mailjet : ${action} de ${email} impossible : ${e instanceof Error ? e.message : String(e)}`);
