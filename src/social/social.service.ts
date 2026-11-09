@@ -134,12 +134,14 @@ export class SocialService {
     const ids = notifs.filter((n) => Number(n.notificationType) === CHANCE_LINK_NOTIF_TYPE).map((n) => Number(n.notificationId));
     if (!ids.length) return notifs;
     const ph = ids.map(() => '?').join(',');
-    const rows = await this.dataSource.query<{ id: number; code: string; expirests: Date }[]>(`
-      SELECT notificationid AS id, code, expirests FROM ${this.links}
+    // Temps restant calculé par la base (NOW() et expirests dans le même fuseau) : la date rendue à l'app ne
+    // dépend pas du fuseau du serveur Node, que mysql2 appliquerait en relisant expirests.
+    const rows = await this.dataSource.query<{ id: number; code: string; ttl: number }[]>(`
+      SELECT notificationid AS id, code, TIMESTAMPDIFF(SECOND, NOW(), expirests) AS ttl FROM ${this.links}
       WHERE notificationid IN (${ph}) AND usedts IS NULL AND code IS NOT NULL AND expirests > NOW()
     `, ids).catch(() => null);
     if (!rows) return notifs;
-    type LinkRow = { id: number; code: string; expirests: Date };
+    type LinkRow = { id: number; code: string; ttl: number };
     const byId = new Map<number, LinkRow>((rows as LinkRow[]).map((r) => [Number(r.id), r]));
     const dead = ids.filter((id) => !byId.has(id));
     if (dead.length) {
@@ -153,7 +155,7 @@ export class SocialService {
       if (!r) return false;
       if (own) {
         n.chanceCode = r.code;
-        n.chanceExpiresTs = new Date(r.expirests).toISOString();
+        n.chanceExpiresTs = new Date(Date.now() + Number(r.ttl) * 1000).toISOString();
       }
       return true;
     });

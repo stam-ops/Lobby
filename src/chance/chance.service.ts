@@ -510,15 +510,18 @@ export class ChanceService {
 
   /** Push en plus de la notification interne, seulement si le téléphone l'affichera (jeton et autorisation). */
   private async pushLinkCode(playerId: number, code: string) {
-    if (!this.fcm.enabled) return;
+    // Journaux sans le code : seulement le joueur et ce qui s'est passé.
+    if (!this.fcm.enabled) return this.logger.log(`Push code Chance-o-mètre joueur ${playerId} : push désactivée (FIREBASE_SERVICE_ACCOUNT)`);
     const [p] = await this.dataSource.query<{ tokenfb: string | null; notifosgranted: number | null }[]>(
       'SELECT tokenfb, notifosgranted FROM playerinfos WHERE playerid = ?', [playerId],
     ).catch(() => [] as { tokenfb: string | null; notifosgranted: number | null }[]);
-    if (!p?.tokenfb || Number(p.notifosgranted) !== 1) return;
-    await this.fcm.send(
+    if (!p?.tokenfb || Number(p.notifosgranted) !== 1)
+      return this.logger.log(`Push code Chance-o-mètre joueur ${playerId} : non envoyée (${!p?.tokenfb ? 'pas de tokenfb' : `notifosgranted = ${p.notifosgranted}`})`);
+    const ok = await this.fcm.send(
       p.tokenfb, 'Code de liaison Chance-o-mètre',
       `Ton code : ${code} (valable ${LINK_CODE_MINUTES} minutes). Ne le donne à personne.`,
     );
+    this.logger.log(`Push code Chance-o-mètre joueur ${playerId} : ${ok ? 'acceptée par Firebase' : 'échec (voir FcmService)'}`);
   }
 
   private sign(u: UserRow): Promise<string> {
