@@ -77,6 +77,10 @@ function replay(order: P[], firstPre: number, sb: P | null, bb: P, board: number
     for (;;) {
       if (inHand() < 2) break;
       if (!order.some(p => elig(p) && (need.has(p) || p.commit < maxBet))) break;
+      // Un seul joueur peut encore miser et il n'a rien à suivre (grosse blinde à tapis plus petite que la petite blinde,
+      // troisième joueur couché) : TableServer clôt le tour sans lui demander d'action.
+      const can = order.filter(elig);
+      if (can.length <= 1 && can.every(p => p.commit >= maxBet)) break;
       if (guard++ > 1000) return null;
       const i = idx; idx = (idx + 1) % n;
       const p = order[i];
@@ -169,7 +173,9 @@ export function campokHand(heroPid: number, h: HandRow, seats: SeatRow[], action
     const bb = rot(small[0]).slice(1).find(p => p.blind === max);
     if (bb) tries.push([small[0], bb]);
   }
-  for (const b of posters) { for (const s of posters) if (s !== b) tries.push([s, b]); tries.push([null, b]); }
+  // Avec une petite blinde d'abord : sans elle, une grosse blinde à tapis plus petite passerait pour une mise morte.
+  for (const b of posters) for (const s of posters) if (s !== b) tries.push([s, b]);
+  for (const b of posters) tries.push([null, b]);
   let r: ReturnType<typeof replay> = null, btn: P | null = null, sbP: P | null = null;
   for (const [s, b] of tries) {
     let order: P[], first: number;
