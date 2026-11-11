@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsOptional, IsString, Matches, MaxLength } from 'class-validator';
+import { IsBoolean, IsEmail, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { CAMPOK_HANDS_MAX } from '../campok-hands';
 
 /** Lien reçu par e-mail : 32 octets aléatoires en base64url. */
 const TOKEN_RE = /^[\w-]{43}$/;
@@ -90,4 +91,19 @@ export class ChanceCampokConfirmDto {
   @ApiProperty({ example: '123456', description: 'Code à 6 chiffres affiché dans les notifications de l’app Campok' })
   @Matches(/^\d{6}$/)
   code: string;
+}
+
+export class ChanceCampokHandsDto {
+  @ApiProperty({ required: false, description: 'Dernière main déjà reçue (tablehandid) ; absent : les plus récentes' })
+  @IsOptional()
+  @IsInt()
+  @Min(0)
+  after?: number;
+
+  @ApiProperty({ required: false, description: `Nombre de mains (${CAMPOK_HANDS_MAX} au plus)` })
+  @IsOptional()
+  @IsInt()
+  @Min(1)
+  @Max(CAMPOK_HANDS_MAX)
+  limit?: number;
 }

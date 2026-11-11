@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiHeader, ApiOperation, ApiTags } from '@nestjs/swagger
 import { Auth } from '../auth/auth.decorator';
 import { ChanceService } from './chance.service';
 import {
-  ChanceCampokConfirmDto, ChanceCampokRequestDto, ChanceIpDto, ChanceLoginConfirmDto, ChanceLoginRequestDto,
+  ChanceCampokConfirmDto, ChanceCampokHandsDto, ChanceCampokRequestDto, ChanceIpDto, ChanceLoginConfirmDto, ChanceLoginRequestDto,
   ChanceTokenDto, ChanceUpdateDto,
 } from './dto/chance.dto';
 
@@ -80,6 +80,14 @@ export class ChanceController {
   @ApiOperation({ summary: 'Délie le compte Campok' })
   unlinkCampok(@Headers(SESSION_HEADER) session: string) {
     return this.chance.unlinkCampok(session);
+  }
+
+  @Post('campok/hands')
+  @HttpCode(200)
+  @ApiHeader({ name: SESSION_HEADER })
+  @ApiOperation({ summary: 'Mains Campok du joueur relié (offre 2) : une ligne JSON par main, cartes adverses montrées seulement' })
+  campokHands(@Headers(SESSION_HEADER) session: string, @Body() dto: ChanceCampokHandsDto) {
+    return this.chance.campokHands(session, dto);
   }
 
   @Post('delete/request')

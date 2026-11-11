@@ -11,6 +11,7 @@ import { CaptchaService } from '../organizers/captcha.service';
 import { MailjetService } from './mailjet.service';
 import { FcmService } from './fcm.service';
 import { CHANCE_LINK_NOTIF_TYPE, chanceTable } from './chance-db';
+import { ActionRow, CAMPOK_HANDS_MAX, CardRow, HandRow, SeatRow, campokHand } from './campok-hands';
 import { ChanceMail, deleteMail, loginMail, noAccountMail, signupMail } from './chance-mails';
 
 /** Durée de validité d'un lien ou d'un code reçu par e-mail. */
@@ -334,6 +335,66 @@ export class ChanceService {
     );
     user.playerid = null;
     return { user: await this.profile(user) };
+  }
+
+  /**
+   * Mains Campok du joueur relié (offre 2), une ligne JSON par main (campok-hands.ts : ordre des coups refait, cartes
+   * adverses seulement montrées, joueurs nommés par leur playerid). Après `after` (tablehandid), dans l'ordre ; sans
+   * `after`, les plus récentes. `next` : curseur à renvoyer (dernière main lue, même refusée), `more` : il en reste.
+   */
+  async campokHands(session: string | undefined, dto: { after?: number; limit?: number }) {
+    const { user } = await this.fromSession(session);
+    if (user.playerid == null) throw new BadRequestException('Relie d’abord ton compte Campok.');
+    const pid = Number(user.playerid), after = dto.after ?? null;
+    const limit = Math.min(Math.max(Math.trunc(dto.limit ?? CAMPOK_HANDS_MAX), 1), CAMPOK_HANDS_MAX);
+    const rows = await this.dataSource.query<HandRow[]>(
+      `SELECT th.tablehandid AS id, th.startts AS ts, gt.label AS label, gt.tabletype AS tt, gt.tournamentid AS tid,
+              gta.maxplayers AS maxp
+       FROM gametableplayer gtp
+       JOIN handplayer hp ON hp.gametableplayerid = gtp.gametableplayerid
+       JOIN tablehand th ON th.tablehandid = hp.tablehandid
+       JOIN gametable gt ON gt.gametableid = th.gametableid
+       LEFT JOIN gametablearchetype gta ON gta.gametablearchetypeid = gt.gametablearchetypeid
+       WHERE gtp.playerid = ? AND th.endts > 0 ${after != null ? 'AND th.tablehandid > ?' : ''}
+       ORDER BY th.tablehandid ${after != null ? 'ASC' : 'DESC'} LIMIT ${limit}`,
+      after != null ? [pid, after] : [pid],
+    );
+    rows.sort((a, b) => Number(a.id) - Number(b.id));
+    if (!rows.length) return { hands: [], next: after, more: false, skipped: 0 };
+    const ids = rows.map(r => Number(r.id));
+    const [seats, actions, cards] = await Promise.all([
+      this.dataSource.query<SeatRow[]>(
+        `SELECT hp.tablehandid AS hand, hp.gametableplayerid AS gtp, gtp.playerid AS pid, gtp.seatno AS seat,
+                hp.initstack AS init, hp.rake AS rake
+         FROM handplayer hp JOIN gametableplayer gtp ON gtp.gametableplayerid = hp.gametableplayerid
+         WHERE hp.tablehandid IN (?)`, [ids]),
+      this.dataSource.query<ActionRow[]>(
+        `SELECT tablehandid AS hand, gameactionid AS id, gametableplayerid AS gtp, type, betround AS round, amount
+         FROM gameaction WHERE tablehandid IN (?)`, [ids]),
+      this.dataSource.query<CardRow[]>(
+        `SELECT c.gameactionid AS action, c.num, c.color, c.value
+         FROM gameactioncard c JOIN gameaction a ON a.gameactionid = c.gameactionid
+         WHERE a.tablehandid IN (?) AND a.type IN (8, 9, 10, 11)`, [ids]),
+    ]);
+    const group = <T extends { hand: number }>(l: T[]) => {
+      const m = new Map<number, T[]>();
+      for (const x of l) { const k = Number(x.hand), v = m.get(k); if (v) v.push(x); else m.set(k, [x]); }
+      return m;
+    };
+    const S = group(seats), A = group(actions);
+    const handOf = new Map(actions.map(a => [Number(a.id), Number(a.hand)]));
+    const C = new Map<number, CardRow[]>();
+    for (const c of cards) { const k = handOf.get(Number(c.action)); if (k == null) continue; const v = C.get(k); if (v) v.push(c); else C.set(k, [c]); }
+    const hands: { id: string; raw: string }[] = [];
+    let skipped = 0;
+    for (const r of rows) {
+      const k = Number(r.id);
+      let raw: string | null = null;
+      try { raw = campokHand(pid, r, S.get(k) || [], A.get(k) || [], C.get(k) || []); } catch { raw = null; }
+      if (raw) hands.push({ id: String(k), raw }); else skipped++;
+    }
+    if (skipped) this.logger.warn(`Mains Campok : ${skipped} main(s) sur ${rows.length} non relues (joueur ${pid})`);
+    return { hands, next: ids[ids.length - 1], more: after != null && rows.length === limit, skipped };
   }
 
   /** « Se déconnecter partout » : toutes les sessions de ce compte deviennent invalides. */
