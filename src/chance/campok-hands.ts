@@ -109,7 +109,9 @@ function replay(order: P[], firstPre: number, sb: P | null, bb: P, board: number
 }
 
 /** Une main en ligne JSON (ou null si elle ne se relit pas : main incomplète, joueur absent, ordre introuvable). */
-export function campokHand(heroPid: number, h: HandRow, seats: SeatRow[], actions: ActionRow[], cards: CardRow[]): string | null {
+export function campokHand(heroPid: number, h: HandRow, seats: SeatRow[], actions: ActionRow[], cards: CardRow[],
+  why: (reason: string) => void = () => undefined): string | null {
+  const no = (reason: string) => { why(reason); return null; };
   const byGtp = new Map<number, P>();
   const ps = seats.slice().sort((a, b) => a.seat - b.seat).map(s => {
     const p: P = {
@@ -120,7 +122,8 @@ export function campokHand(heroPid: number, h: HandRow, seats: SeatRow[], action
     return p;
   });
   const hero = ps.find(p => p.name === 'p' + heroPid);
-  if (!hero || ps.length < 2 || new Set(ps.map(p => p.name)).size !== ps.length) return null;
+  if (!hero) return no('joueur absent');
+  if (ps.length < 2 || new Set(ps.map(p => p.name)).size !== ps.length) return no('sièges');
   const cardsOf = new Map<number, CardRow[]>();
   for (const c of cards) { const l = cardsOf.get(Number(c.action)) || []; l.push(c); cardsOf.set(Number(c.action), l); }
   const cs = (id: number) => (cardsOf.get(id) || []).sort((a, b) => a.num - b.num).map(card);
@@ -144,17 +147,17 @@ export function campokHand(heroPid: number, h: HandRow, seats: SeatRow[], action
     if ([T.check, T.call, T.raise, T.fold].includes(type as 3) && round >= 0 && round <= 3) p.q[round].push({ type, a: amount });
   }
   const board = [...flop.slice(0, 3), ...turn.slice(0, 1), ...river.slice(0, 1)];
-  if (board.some(c => !c) || (board.length && board.length < 3)) return null;
-  if (ps.some(p => !dealt.has(p) || p.cards.length !== 2 || p.cards.some(c => !c))) return null;
+  if (board.some(c => !c) || (board.length && board.length < 3)) return no('tableau');
+  if (ps.some(p => !dealt.has(p) || p.cards.length !== 2 || p.cards.some(c => !c))) return no('donne');
   // Antes : dès qu'un joueur a deux mises avant la donne, la première de chacun est son ante.
   const antes = ps.some(p => p.posts.length >= 2);
   for (const p of ps) {
-    if (p.posts.length > (antes ? 2 : 1)) return null;
+    if (p.posts.length > (antes ? 2 : 1)) return no('mises avant la donne');
     p.ante = antes ? p.posts[0] || 0 : 0;
     p.blind = (antes ? p.posts[1] : p.posts[0]) || 0;
   }
   const posters = ps.filter(p => p.blind > 0);
-  if (!posters.length) return null;
+  if (!posters.length) return no('pas de blinde');
   // Petite et grosse blindes : la plus petite et la suivante d'abord, puis toutes les autres possibilités (blinde à
   // tapis plus petite que la petite blinde, joueur qui revient en payant la grosse) ; la première qui se rejoue gagne.
   const n = ps.length, at = (p: P) => ps.indexOf(p);
@@ -176,7 +179,7 @@ export function campokHand(heroPid: number, h: HandRow, seats: SeatRow[], action
     r = replay(order, first, s, b, board.length);
     if (r) { btn = order[n === 2 ? 1 : n - 1]; sbP = s; break; }
   }
-  if (!r) return null;
+  if (!r) return no('ordre des coups');
   // Cartes montrées à coup sûr (voir plus haut). Les miennes sont toujours connues.
   const shown = new Set<P>(r.runout || []);
   if (r.last.length >= 2) {

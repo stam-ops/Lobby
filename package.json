@@ -6,7 +6,8 @@
     "start": "nest start",
     "start:dev": "nest start --watch",
     "start:prod": "node dist/main",
-    "seed:admin": "node dist/auth/seed-admin"
+    "seed:admin": "node dist/auth/seed-admin",
+    "campok:check": "node dist/chance/campok-check"
   },
   "dependencies": {
     "@nestjs/common": "^10.0.0",
