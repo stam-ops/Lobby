@@ -59,6 +59,8 @@ export interface ChanceProfile {
   id: number; email: string; creationTs: Date; newsletter: boolean; campok: boolean;
   /** Pseudo du compte Campok relié (offre 2), null sinon. */
   campokName: string | null;
+  /** Joueur Campok relié VIP en ce moment (accounttype 1, endvipts dans le futur) : ouverture des mains Campok sans limite. */
+  vip: boolean;
 }
 
 export function normEmail(email: unknown): string {
@@ -534,15 +536,18 @@ export class ChanceService {
 
   private async profile(u: UserRow): Promise<ChanceProfile> {
     let campokName: string | null = null;
+    let vip = false;
     if (u.playerid != null) {
-      const [p] = await this.dataSource.query<{ screenname: string }[]>(
-        'SELECT screenname FROM playerinfos WHERE playerid = ?', [u.playerid],
+      const [p] = await this.dataSource.query<{ screenname: string | null; vip: number | string | null }[]>(
+        `SELECT i.screenname, (p.accounttype = 1 AND p.endvipts > NOW()) AS vip
+           FROM player p LEFT JOIN playerinfos i ON i.playerid = p.playerid WHERE p.playerid = ?`, [u.playerid],
       );
       campokName = p?.screenname ?? null;
+      vip = Number(p?.vip) === 1;
     }
     return {
       id: u.chanceuserid, email: u.email, creationTs: u.creationts,
-      newsletter: !!u.newsletter, campok: u.playerid != null, campokName,
+      newsletter: !!u.newsletter, campok: u.playerid != null, campokName, vip,
     };
   }
 
