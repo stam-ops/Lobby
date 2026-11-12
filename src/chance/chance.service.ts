@@ -1,5 +1,5 @@
 import {
-  BadRequestException, HttpException, HttpStatus, Injectable, Logger, NotFoundException,
+  BadRequestException, ConflictException, HttpException, HttpStatus, Injectable, Logger, NotFoundException,
   ServiceUnavailableException, UnauthorizedException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
@@ -42,6 +42,7 @@ const BAD_CODE = 'Code invalide ou expiré : demande un nouveau code.';
 
 /** Réponse identique que l'adresse ait un compte, n'en ait pas ou ait atteint sa limite. */
 const SENT = { message: 'Si l’adresse est valide, un e-mail vient de t’être envoyé.' };
+const EMAIL_TAKEN = 'Désolé, cet e-mail est déjà associé à un compte.';
 const BAD_LINK = 'Lien ou code invalide ou expiré : demande un nouveau lien.';
 const BAD_SESSION = 'Session expirée : reconnecte-toi.';
 
@@ -124,6 +125,8 @@ export class ChanceService {
   /**
    * Demande de lien. `signup` : création de compte (18 ans ou plus obligatoire, nouvelles facultatives).
    * Adresse sans compte et sans `signup` : e-mail « aucun compte », même réponse pour la page.
+   * Création pour une adresse qui a déjà un compte : 409 sans e-mail (la page propose de se connecter) ; la demande
+   * compte quand même dans la limite par adresse IP.
    */
   async requestLogin(dto: {
     email: string; ip: string; captchaToken?: string; signup?: boolean; adult?: boolean; newsletter?: boolean;
@@ -139,11 +142,17 @@ export class ChanceService {
     }
     await this.purge();
     await this.limitIp(ip);
-    if (!(await this.underEmailLimit(email))) return SENT;
-
     const [user] = await this.dataSource.query<{ id: number }[]>(
       `SELECT chanceuserid AS id FROM ${this.users} WHERE email = ?`, [email],
     );
+    if (user && dto.signup) {
+      await this.dataSource.query(
+        `INSERT INTO ${this.logins} (email, purpose, ip, expirests) VALUES (?, 'none', ?, NOW())`, [email, ip],
+      );
+      throw new ConflictException(EMAIL_TAKEN);
+    }
+    if (!(await this.underEmailLimit(email))) return SENT;
+
     const purpose = user ? 'login' : dto.signup ? 'signup' : 'none';
     if (purpose === 'none') {
       await this.dataSource.query(
