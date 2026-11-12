@@ -10,6 +10,7 @@ import { MailService } from '../organizers/mail.service';
 import { CaptchaService } from '../organizers/captcha.service';
 import { MailjetService } from './mailjet.service';
 import { FcmService } from './fcm.service';
+import { VipWebService, type VipPlan } from './vip-web.service';
 import { CHANCE_LINK_NOTIF_TYPE, chanceTable } from './chance-db';
 import { ActionRow, CAMPOK_HANDS_MAX, CardRow, HandRow, SeatRow, campokHand } from './campok-hands';
 import { ChanceMail, deleteMail, loginMail, noAccountMail, signupMail } from './chance-mails';
@@ -61,6 +62,12 @@ export interface ChanceProfile {
   campokName: string | null;
   /** Joueur Campok relié VIP en ce moment (accounttype 1, endvipts dans le futur) : ouverture des mains Campok sans limite. */
   vip: boolean;
+  /** Fin du VIP (ISO), null sans VIP. */
+  vipUntil: string | null;
+  /** Abonnement VIP pris sur le Chance-o-mètre : 'active' (renouvelé chaque mois), 'canceled' (résilié), null sinon. */
+  vipSub: 'active' | 'canceled' | null;
+  /** Vente du VIP ouverte (clés Stripe présentes). */
+  vipShop: boolean;
 }
 
 export function normEmail(email: unknown): string {
@@ -103,6 +110,7 @@ export class ChanceService {
     private readonly mailjet: MailjetService,
     private readonly captcha: CaptchaService,
     private readonly fcm: FcmService,
+    private readonly vipWeb: VipWebService,
     config: ConfigService,
   ) {
     this.users = chanceTable(config, 'chanceuser');
@@ -339,6 +347,19 @@ export class ChanceService {
   }
 
   /** Délie le compte Campok. */
+  // ─── Campok VIP vendu ici (vip-web.service.ts) ─────────────────────────────────────────────────
+
+  async vipCheckout(session: string | undefined, plan: VipPlan) {
+    const { user } = await this.fromSession(session);
+    return this.vipWeb.checkout(user, plan);
+  }
+
+  async vipCancel(session: string | undefined) {
+    const { user } = await this.fromSession(session);
+    await this.vipWeb.cancel(user.playerid == null ? null : Number(user.playerid));
+    return { user: await this.profile(user) };
+  }
+
   async unlinkCampok(session: string | undefined) {
     const { user } = await this.fromSession(session);
     await this.dataSource.query(
@@ -536,18 +557,17 @@ export class ChanceService {
 
   private async profile(u: UserRow): Promise<ChanceProfile> {
     let campokName: string | null = null;
-    let vip = false;
+    let st: { vip: boolean; vipUntil: string | null; vipSub: 'active' | 'canceled' | null } = { vip: false, vipUntil: null, vipSub: null };
     if (u.playerid != null) {
-      const [p] = await this.dataSource.query<{ screenname: string | null; vip: number | string | null }[]>(
-        `SELECT i.screenname, (p.accounttype = 1 AND p.endvipts > NOW()) AS vip
-           FROM player p LEFT JOIN playerinfos i ON i.playerid = p.playerid WHERE p.playerid = ?`, [u.playerid],
+      const [p] = await this.dataSource.query<{ screenname: string | null }[]>(
+        'SELECT screenname FROM playerinfos WHERE playerid = ?', [u.playerid],
       );
       campokName = p?.screenname ?? null;
-      vip = Number(p?.vip) === 1;
+      st = await this.vipWeb.status(Number(u.playerid));
     }
     return {
       id: u.chanceuserid, email: u.email, creationTs: u.creationts,
-      newsletter: !!u.newsletter, campok: u.playerid != null, campokName, vip,
+      newsletter: !!u.newsletter, campok: u.playerid != null, campokName, ...st, vipShop: this.vipWeb.enabled,
     };
   }
 

@@ -1,9 +1,17 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsBoolean, IsEmail, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
+import { VIP_PLAN_KEYS, type VipPlan } from '../vip-web.service';
 import { CAMPOK_HANDS_MAX } from '../campok-hands';
 
 /** Lien reçu par e-mail : 32 octets aléatoires en base64url. */
 const TOKEN_RE = /^[\w-]{43}$/;
+
+/** Campok VIP acheté sur le Chance-o-mètre : pass 1, 3 ou 6 mois, ou abonnement mensuel. */
+export class ChanceVipCheckoutDto {
+  @ApiProperty({ enum: VIP_PLAN_KEYS })
+  @IsIn(VIP_PLAN_KEYS)
+  plan: VipPlan;
+}
 
 export class ChanceLoginRequestDto {
   @ApiProperty({ example: 'joueur@exemple.fr' })

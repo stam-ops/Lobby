@@ -4,7 +4,7 @@ import { Auth } from '../auth/auth.decorator';
 import { ChanceService } from './chance.service';
 import {
   ChanceCampokConfirmDto, ChanceCampokHandsDto, ChanceCampokRequestDto, ChanceIpDto, ChanceLoginConfirmDto, ChanceLoginRequestDto,
-  ChanceTokenDto, ChanceUpdateDto,
+  ChanceTokenDto, ChanceUpdateDto, ChanceVipCheckoutDto,
 } from './dto/chance.dto';
 
 const SESSION_HEADER = 'x-chance-session';
@@ -72,6 +72,22 @@ export class ChanceController {
   @ApiOperation({ summary: 'Code tapé sur la page → compte Campok relié (offre 2)' })
   confirmCampokLink(@Headers(SESSION_HEADER) session: string, @Body() dto: ChanceCampokConfirmDto) {
     return this.chance.confirmCampokLink(session, dto);
+  }
+
+  @Post('vip/checkout')
+  @HttpCode(200)
+  @ApiHeader({ name: SESSION_HEADER })
+  @ApiOperation({ summary: 'Page de paiement Stripe du Campok VIP (joueur relié, pas déjà VIP) → { url }' })
+  vipCheckout(@Headers(SESSION_HEADER) session: string, @Body() dto: ChanceVipCheckoutDto) {
+    return this.chance.vipCheckout(session, dto.plan);
+  }
+
+  @Post('vip/cancel')
+  @HttpCode(200)
+  @ApiHeader({ name: SESSION_HEADER })
+  @ApiOperation({ summary: 'Résilie l’abonnement VIP web (fin de la période en cours) → { user }' })
+  vipCancel(@Headers(SESSION_HEADER) session: string) {
+    return this.chance.vipCancel(session);
   }
 
   @Post('campok/unlink')

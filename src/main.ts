@@ -4,7 +4,8 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 
 async function bootstrap() {
-  const app = await NestFactory.create(AppModule);
+  // rawBody : corps brut gardé à côté du JSON lu, pour la signature du webhook Stripe (chance/vip-web.controller.ts).
+  const app = await NestFactory.create(AppModule, { rawBody: true });
   app.useGlobalPipes(new ValidationPipe({ transform: true }));
 
   // CORS pour le backoffice navigateur. L'app React Native n'est pas concernée (pas un navigateur).
