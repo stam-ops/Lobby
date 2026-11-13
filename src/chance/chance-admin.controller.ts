@@ -35,6 +35,12 @@ export class ChanceAdminController {
     return this.chance.list(search, page, pageSize);
   }
 
+  @Get('users/:id')
+  @ApiOperation({ summary: 'Fiche d’un compte : offres, achats, bilan de chance, mains du module d’analyse, profil de jeu' })
+  detail(@Param('id', ParseIntPipe) id: number) {
+    return this.chance.adminDetail(id);
+  }
+
   @Delete('users/:id')
   @Roles('admin')
   @ApiOperation({ summary: 'Supprime un compte (demande d’effacement reçue par le support)' })

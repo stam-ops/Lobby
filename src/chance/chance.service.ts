@@ -29,6 +29,7 @@ export const SESSION_DAYS = 30;
 const REFRESH_AFTER_S = 24 * 3600;
 const SESSION_PURPOSE = 'chance-session';
 const SECRET_MIN = 32;
+const SITE_TIMEOUT_MS = 8000;          // fiche du backoffice : lecture du service public
 
 /** Liaison Campok (offre 2) : validité du code reçu dans l'app, essais, limites. */
 export const LINK_CODE_MINUTES = 10;
@@ -110,6 +111,7 @@ export class ChanceService {
   private readonly tokenSecret: string;
   private readonly sessionSecret: string;
   private readonly publicUrl: string;
+  private readonly partnerKey: string;
   private readonly ready: boolean;
 
   constructor(
@@ -129,6 +131,7 @@ export class ChanceService {
     this.tokenSecret = config.get<string>('CHANCE_TOKEN_SECRET', '');
     this.sessionSecret = config.get<string>('CHANCE_SESSION_SECRET', '');
     this.publicUrl = config.get<string>('CHANCE_PUBLIC_URL', 'http://localhost:5174').replace(/\/+$/, '');
+    this.partnerKey = config.get<string>('CHANCE_PARTNER_KEY', '');
     const jwtSecret = config.get<string>('JWT_SECRET', '');
     this.ready = this.tokenSecret.length >= SECRET_MIN && this.sessionSecret.length >= SECRET_MIN
       && this.tokenSecret !== this.sessionSecret && this.sessionSecret !== jwtSecret;
@@ -554,6 +557,54 @@ export class ChanceService {
       }),
       total: Number(total.n),
     };
+  }
+
+  /**
+   * Fiche d'un compte : compte, offres en cours, achats et abonnements (offre Analyse du compte ; Campok VIP et achats
+   * dans l'app du joueur relié), et ce que garde le service public (bilan de chance, mains du module d'analyse, profil
+   * de jeu), lu sur sa route interne avec la clé partagée. Service public injoignable : `site` = null et `siteError`.
+   */
+  async adminDetail(id: number) {
+    const [u] = await this.dataSource.query<Record<string, unknown>[]>(
+      `SELECT u.chanceuserid AS id, u.email, u.newsletter, u.newsletterts AS newsletterTs, u.adult, u.playerid AS playerId,
+              u.creationts AS creationTs, u.lastlogints AS lastLoginTs, u.linkts AS linkTs, pi.screenname AS screenName
+       FROM ${this.users} u LEFT JOIN playerinfos pi ON pi.playerid = u.playerid WHERE u.chanceuserid = ?`, [id],
+    );
+    if (!u) throw new NotFoundException(`Compte ${id} introuvable`);
+    const pid = u.playerId == null ? null : Number(u.playerId);
+    const [vip, analyse, ana, vp, site] = await Promise.all([
+      pid == null ? { vip: false, vipUntil: null, vipSub: null } : this.vipWeb.status(pid),
+      this.analyseWeb.status(id),
+      this.analyseWeb.adminPurchases(id),
+      pid == null ? { payments: [], subs: [] } : this.vipWeb.adminPurchases(pid),
+      this.siteDetail(id),
+    ]);
+    const byTs = (a: { ts: string | null }, b: { ts: string | null }) => (b.ts ?? '').localeCompare(a.ts ?? '');
+    return {
+      user: { ...u, newsletter: !!u.newsletter, adult: !!u.adult },
+      vip, analyse,
+      purchases: [...ana.payments, ...vp.payments].sort(byTs),
+      subscriptions: [...ana.subs, ...vp.subs],
+      ...site,
+    };
+  }
+
+  /** Données du compte gardées par le service public (GET /interne/compte/:id, clé CHANCE_PARTNER_KEY). */
+  private async siteDetail(id: number): Promise<{ site: Record<string, unknown> | null; siteError: string | null }> {
+    if (this.partnerKey.length < SECRET_MIN) return { site: null, siteError: 'CHANCE_PARTNER_KEY absente : données du service public indisponibles.' };
+    try {
+      const res = await fetch(`${this.publicUrl}/interne/compte/${id}`, {
+        headers: { Authorization: `Bearer ${this.partnerKey}` }, redirect: 'error', signal: AbortSignal.timeout(SITE_TIMEOUT_MS),
+      });
+      if (!res.ok) {
+        this.logger.warn(`Service public : GET /interne/compte/${id} → ${res.status}`);
+        return { site: null, siteError: `Service public : erreur ${res.status}${res.status === 404 ? ' (pas encore mis à jour ?)' : ''}.` };
+      }
+      return { site: await res.json() as Record<string, unknown>, siteError: null };
+    } catch (e) {
+      this.logger.warn(`Service public injoignable (${(e as Error).message})`);
+      return { site: null, siteError: 'Service public injoignable.' };
+    }
   }
 
   /** Suppression demandée au support (droit à l'effacement). */

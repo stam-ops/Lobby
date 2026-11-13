@@ -62,6 +62,42 @@ export class VipWebService {
     return { vip, vipUntil: p.until ? new Date(p.until).toISOString() : null, vipSub: (s?.status as 'active' | 'canceled') ?? null };
   }
 
+  /**
+   * Backoffice : achats et abonnements du joueur Campok relié, toutes plateformes (Stripe ici, stores dans l'app).
+   * Prix : formule web (VIP_PLANS) pour Stripe, sinon la table offer, comme la page Paiements.
+   */
+  async adminPurchases(playerId: number) {
+    const pays = await this.ds.query<{ ts: Date; platform: string; productid: string; producttype: number; orderid: string;
+      subkey: string | null; validated: number | string; cents: number | null; currency: string | null }[]>(
+      `SELECT pp.ts, pp.platform, pp.productid, pp.producttype, pp.orderid, pp.subkey, pp.validated,
+              (SELECT o.pricecents FROM offer o WHERE o.productid = pp.productid AND o.producttype = pp.producttype LIMIT 1) AS cents,
+              (SELECT o.currency FROM offer o WHERE o.productid = pp.productid AND o.producttype = pp.producttype LIMIT 1) AS currency
+       FROM paymentpoker pp WHERE pp.playerid = ? ORDER BY pp.paymentpokerid DESC LIMIT 200`, [playerId],
+    );
+    const subs = await this.ds.query<{ platform: string; productid: string; subkey: string; status: string; expiryts: unknown;
+      createdts: Date; updatedts: Date }[]>(
+      `SELECT platform, productid, subkey, status, expiryts, createdts, updatedts FROM playersubscription
+        WHERE playerid = ? ORDER BY updatedts DESC LIMIT 50`, [playerId],
+    );
+    const web = (id: string) => VIP_PLANS[id.replace(/^web_vip_/, '') as VipPlan];
+    const iso = (d: unknown) => {
+      const n = typeof d === 'number' || (typeof d === 'string' && /^\d+$/.test(d)) ? Number(d) : null;
+      const t = n != null ? (n > 0 ? new Date(n) : null) : d ? new Date(d as string) : null;
+      return t && !Number.isNaN(t.getTime()) ? t.toISOString() : null;
+    };
+    return {
+      payments: pays.map((p) => {
+        const w = p.platform === 'stripe' ? web(p.productid) : undefined;
+        return { ts: iso(p.ts), product: 'vip', plan: p.productid, label: w?.name ?? p.productid, platform: p.platform,
+          cents: w ? w.cents : p.cents == null ? null : Number(p.cents), currency: w ? 'EUR' : p.currency, orderId: p.orderid,
+          subKey: p.subkey || null, validated: Number(p.validated) === 1 };
+      }),
+      subs: subs.map((s) => ({ product: 'vip', platform: s.platform, productId: s.productid,
+        label: (s.platform === 'stripe' ? web(s.productid)?.name : null) ?? s.productid, subKey: s.subkey, status: s.status,
+        createdTs: iso(s.createdts), updatedTs: iso(s.updatedts), expiryTs: iso(s.expiryts) })),
+    };
+  }
+
   /** Page de paiement Stripe pour ce joueur (pas déjà VIP) → { url }. */
   async checkout(user: { chanceuserid: number; email: string; playerid: number | null }, plan: VipPlan) {
     const p = VIP_PLANS[plan];

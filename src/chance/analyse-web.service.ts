@@ -97,6 +97,24 @@ export class AnalyseWebService {
     return m;
   }
 
+  /** Backoffice : paiements et abonnements de l'offre Analyse d'un compte, du plus récent au plus ancien. */
+  async adminPurchases(uid: number) {
+    if (!(await this.ready())) return { payments: [], subs: [] };
+    const pays = await this.ds.query<{ plan: string; cents: number; orderid: string; subkey: string; ts: Date }[]>(
+      `SELECT plan, cents, orderid, subkey, creationts AS ts FROM ${this.payments} WHERE chanceuserid = ? ORDER BY creationts DESC`, [uid],
+    );
+    const subs = await this.ds.query<{ subkey: string; status: string; created: Date; updated: Date }[]>(
+      `SELECT subkey, status, creationts AS created, updatedts AS updated FROM ${this.subs} WHERE chanceuserid = ? ORDER BY updatedts DESC`, [uid],
+    );
+    const name = (p: string) => ANALYSE_PLANS[p as AnalysePlan]?.name ?? `Offre Analyse (${p})`;
+    return {
+      payments: pays.map((p) => ({ ts: new Date(p.ts).toISOString(), product: 'analyse', plan: p.plan, label: name(p.plan),
+        platform: 'stripe', cents: Number(p.cents), currency: 'EUR', orderId: p.orderid, subKey: p.subkey || null, validated: true })),
+      subs: subs.map((s) => ({ product: 'analyse', platform: 'stripe', productId: 'analyse_mois', label: name('mois'), subKey: s.subkey,
+        status: s.status, createdTs: new Date(s.created).toISOString(), updatedTs: new Date(s.updated).toISOString(), expiryTs: null })),
+    };
+  }
+
   /** Page de paiement Stripe pour ce compte (offre pas déjà en cours) → { url }. */
   async checkout(user: { chanceuserid: number; email: string }, plan: AnalysePlan) {
     const p = ANALYSE_PLANS[plan];
