@@ -37,6 +37,27 @@ export function noAccountMail(pageUrl: string): ChanceMail {
   };
 }
 
+/**
+ * Confirmation de la résiliation d'un abonnement, sur support durable (art. L215-1-1 du Code de la consommation) :
+ * envoyée dès le clic sur « Résilier », avec la date de fin. `until` : fin de ce qui est payé (ISO), ou null.
+ */
+export function cancelMail(offer: 'analyse' | 'vip', until: string | null, pageUrl: string): ChanceMail {
+  const name = offer === 'analyse' ? 'l’offre Analyse' : 'Campok VIP';
+  const day = until
+    ? new Date(until).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' })
+    : null;
+  return {
+    subject: offer === 'analyse' ? 'Résiliation de ton offre Analyse' : 'Résiliation de ton abonnement Campok VIP',
+    text:
+      `Bonjour,\n\nTa résiliation de l’abonnement mensuel à ${name} est bien prise en compte.\n\n`
+      + (day ? `Ce que tu as payé reste à toi : tu gardes ${name} jusqu’au ${day}. ` : '')
+      + `Aucun nouveau prélèvement ne sera fait.\n\n`
+      + `Tu peux te réabonner quand tu veux depuis « Mon compte » : ${pageUrl}\n\n`
+      + `Tu n’es pas à l’origine de cette résiliation ? Choisis « Se déconnecter partout » dans « Mon compte », `
+      + `puis reconnecte-toi avec un nouveau lien.\n${FOOTER}`,
+  };
+}
+
 export function deleteMail(link: string): ChanceMail {
   return {
     subject: 'Suppression de ton compte Chance-o-mètre',

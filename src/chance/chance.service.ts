@@ -14,7 +14,7 @@ import { VipWebService, type VipPlan } from './vip-web.service';
 import { AnalyseWebService, type AnalysePlan } from './analyse-web.service';
 import { CHANCE_LINK_NOTIF_TYPE, chanceTable } from './chance-db';
 import { ActionRow, CAMPOK_HANDS_MAX, CardRow, HandRow, SeatRow, campokHand } from './campok-hands';
-import { ChanceMail, deleteMail, loginMail, noAccountMail, signupMail } from './chance-mails';
+import { cancelMail, ChanceMail, deleteMail, loginMail, noAccountMail, signupMail } from './chance-mails';
 
 /** Durée de validité d'un lien ou d'un code reçu par e-mail. */
 export const LINK_TTL_MINUTES = 15;
@@ -373,7 +373,10 @@ export class ChanceService {
   async vipCancel(session: string | undefined) {
     const { user } = await this.fromSession(session);
     await this.vipWeb.cancel(user.playerid == null ? null : Number(user.playerid));
-    return { user: await this.profile(user) };
+    const profile = await this.profile(user);
+    // Confirmation écrite de la résiliation (un échec d'envoi est journalisé : la résiliation reste faite).
+    await this.send(user.email, cancelMail('vip', profile.vipUntil, `${this.publicUrl}/chance-o-metre#compte`));
+    return { user: profile };
   }
 
   // ─── Offre Analyse vendue ici (analyse-web.service.ts) ─────────────────────────────────────────
@@ -386,7 +389,10 @@ export class ChanceService {
   async analyseCancel(session: string | undefined) {
     const { user } = await this.fromSession(session);
     await this.analyseWeb.cancel(Number(user.chanceuserid));
-    return { user: await this.profile(user) };
+    const profile = await this.profile(user);
+    // Confirmation écrite de la résiliation (un échec d'envoi est journalisé : la résiliation reste faite).
+    await this.send(user.email, cancelMail('analyse', profile.analyseUntil, `${this.publicUrl}/chance-o-metre#compte`));
+    return { user: profile };
   }
 
   async unlinkCampok(session: string | undefined) {
