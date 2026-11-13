@@ -23,6 +23,13 @@ export class ChanceAdminController {
     return this.chance.stats();
   }
 
+  @Get('usage')
+  @ApiOperation({ summary: 'Analyses de la page gratuite (comptage anonyme du service public) : par jour, avec et sans compte, personnes distinctes du jour, mains, salles, formats' })
+  @ApiQuery({ name: 'days', required: false, description: '30 par défaut, 400 au plus' })
+  usage(@Query('days', new DefaultValuePipe(30), ParseIntPipe) days: number) {
+    return this.chance.usage(days);
+  }
+
   @Get('users')
   @ApiOperation({ summary: 'Liste des comptes (recherche par e-mail, pagination)' })
   @ApiQuery({ name: 'search', required: false })

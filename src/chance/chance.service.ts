@@ -650,6 +650,29 @@ export class ChanceService {
     };
   }
 
+  /**
+   * Comptage anonyme des analyses de la page gratuite, gardé par le service public (GET /interne/stats) : totaux par
+   * jour seulement. Injoignable ou erreur : 503.
+   */
+  async usage(days: number) {
+    if (this.partnerKey.length < SECRET_MIN) throw new ServiceUnavailableException('CHANCE_PARTNER_KEY absente : statistiques du service public indisponibles.');
+    const jours = Math.min(Math.max(Math.trunc(days) || 30, 1), 400);
+    let res: Response;
+    try {
+      res = await fetch(`${this.publicUrl}/interne/stats?jours=${jours}`, {
+        headers: { Authorization: `Bearer ${this.partnerKey}` }, redirect: 'error', signal: AbortSignal.timeout(SITE_TIMEOUT_MS),
+      });
+    } catch (e) {
+      this.logger.warn(`Service public injoignable (${(e as Error).message})`);
+      throw new ServiceUnavailableException('Service public injoignable.');
+    }
+    if (!res.ok) {
+      this.logger.warn(`Service public : GET /interne/stats → ${res.status}`);
+      throw new ServiceUnavailableException(`Service public : erreur ${res.status}${res.status === 404 ? ' (pas encore mis à jour ?)' : ''}.`);
+    }
+    return res.json() as Promise<Record<string, unknown>>;
+  }
+
   /** Données du compte gardées par le service public (GET /interne/compte/:id, clé CHANCE_PARTNER_KEY). */
   private async siteDetail(id: number, room: string | null): Promise<{ site: Record<string, unknown> | null; siteError: string | null }> {
     if (this.partnerKey.length < SECRET_MIN) return { site: null, siteError: 'CHANCE_PARTNER_KEY absente : données du service public indisponibles.' };
