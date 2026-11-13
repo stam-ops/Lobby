@@ -531,17 +531,27 @@ export class ChanceService {
     const size = Math.min(Math.max(pageSize || 50, 1), 200);
     const offset = Math.max(page || 0, 0) * size;
     const like = `%${String(search ?? '').trim().toLowerCase().replace(/[\\%_]/g, (c) => '\\' + c)}%`;
+    // Compte Campok relié : pseudo et VIP en ce moment (même règle que vipWeb.status) ; offre Analyse en cours.
     const items = await this.dataSource.query<Record<string, unknown>[]>(
-      `SELECT chanceuserid AS id, email, newsletter, playerid AS playerId, creationts AS creationTs,
-              lastlogints AS lastLoginTs
-       FROM ${this.users} WHERE email LIKE ? ORDER BY chanceuserid DESC LIMIT ${size} OFFSET ${offset}`,
+      `SELECT u.chanceuserid AS id, u.email, u.newsletter, u.playerid AS playerId, u.creationts AS creationTs,
+              u.lastlogints AS lastLoginTs, u.linkts AS linkTs, pi.screenname AS screenName,
+              (p.accounttype = 1 AND p.endvipts > NOW()) AS vip, p.endvipts AS vipUntil
+       FROM ${this.users} u
+       LEFT JOIN playerinfos pi ON pi.playerid = u.playerid
+       LEFT JOIN player p ON p.playerid = u.playerid
+       WHERE u.email LIKE ? ORDER BY u.chanceuserid DESC LIMIT ${size} OFFSET ${offset}`,
       [like],
     );
+    const ana = await this.analyseWeb.untilOf(items.map((i) => Number(i.id)));
     const [total] = await this.dataSource.query<{ n: string | number }[]>(
       `SELECT COUNT(*) AS n FROM ${this.users} WHERE email LIKE ?`, [like],
     );
     return {
-      items: items.map((i) => ({ ...i, newsletter: !!i.newsletter })),
+      items: items.map((i) => {
+        const vip = Number(i.vip) === 1;
+        return { ...i, newsletter: !!i.newsletter, vip, vipUntil: vip && i.vipUntil ? new Date(i.vipUntil as string).toISOString() : null,
+          analyseUntil: ana.get(Number(i.id)) ?? null };
+      }),
       total: Number(total.n),
     };
   }

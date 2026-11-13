@@ -85,6 +85,18 @@ export class AnalyseWebService {
     return { analyse: true, analyseUntil: new Date(r.until).toISOString(), analyseSub: (s?.status as 'active' | 'canceled') ?? null };
   }
 
+  /** Backoffice : fin de l'offre Analyse en cours (ISO), pour les comptes d'une page de la liste. */
+  async untilOf(uids: number[]): Promise<Map<number, string>> {
+    const m = new Map<number, string>();
+    if (!uids.length || !(await this.ready())) return m;
+    const rows = await this.ds.query<{ id: number; until: Date }[]>(
+      `SELECT chanceuserid AS id, untilts AS until FROM ${this.offers}
+        WHERE untilts > NOW() AND chanceuserid IN (${uids.map(() => '?').join(', ')})`, uids,
+    );
+    for (const r of rows) m.set(Number(r.id), new Date(r.until).toISOString());
+    return m;
+  }
+
   /** Page de paiement Stripe pour ce compte (offre pas déjà en cours) → { url }. */
   async checkout(user: { chanceuserid: number; email: string }, plan: AnalysePlan) {
     const p = ANALYSE_PLANS[plan];
