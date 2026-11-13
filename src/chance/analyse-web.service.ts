@@ -226,9 +226,10 @@ export class AnalyseWebService {
   /**
    * Suppression du compte : abonnement en cours arrêté tout de suite chez Stripe (plus aucun prélèvement), offre
    * effacée ; les paiements restent (comptabilité). Échec chez Stripe : erreur, le compte n'est pas supprimé (à refaire).
+   * Renvoie le nombre d'abonnements arrêtés (e-mail de confirmation de la suppression).
    */
-  async forget(uid: number) {
-    if (!(await this.ready())) return;
+  async forget(uid: number): Promise<number> {
+    if (!(await this.ready())) return 0;
     const rows = await this.ds.query<{ subkey: string }[]>(
       `SELECT subkey FROM ${this.subs} WHERE chanceuserid = ? AND status = 'active'`, [uid],
     );
@@ -245,6 +246,7 @@ export class AnalyseWebService {
     }
     await this.ds.query(`UPDATE ${this.subs} SET status = 'expired' WHERE chanceuserid = ?`, [uid]);
     await this.ds.query(`DELETE FROM ${this.offers} WHERE chanceuserid = ?`, [uid]);
+    return rows.length;
   }
 
   // ─── Webhook (reçu par vip-web.service.ts) ────────────────────────────────────────────────────

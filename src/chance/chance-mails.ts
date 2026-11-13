@@ -6,6 +6,10 @@ export interface ChanceMail { subject: string; text: string }
 
 const FOOTER = '\n— Le Chance-o-mètre de Campok\n';
 
+/** Date ISO → « 14 décembre 2026 » (heure de Paris). */
+const frDay = (iso: string) =>
+  new Date(iso).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' });
+
 export function loginMail(link: string, code: string): ChanceMail {
   return {
     subject: 'Ta connexion au Chance-o-mètre',
@@ -43,9 +47,7 @@ export function noAccountMail(pageUrl: string): ChanceMail {
  */
 export function cancelMail(offer: 'analyse' | 'vip', until: string | null, pageUrl: string): ChanceMail {
   const name = offer === 'analyse' ? 'l’offre Analyse' : 'Campok VIP';
-  const day = until
-    ? new Date(until).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric', timeZone: 'Europe/Paris' })
-    : null;
+  const day = until ? frDay(until) : null;
   return {
     subject: offer === 'analyse' ? 'Résiliation de ton offre Analyse' : 'Résiliation de ton abonnement Campok VIP',
     text:
@@ -55,6 +57,31 @@ export function cancelMail(offer: 'analyse' | 'vip', until: string | null, pageU
       + `Tu peux te réabonner quand tu veux depuis « Mon compte » : ${pageUrl}\n\n`
       + `Tu n’es pas à l’origine de cette résiliation ? Choisis « Se déconnecter partout » dans « Mon compte », `
       + `puis reconnecte-toi avec un nouveau lien.\n${FOOTER}`,
+  };
+}
+
+/**
+ * Confirmation de la suppression du compte (faite par le joueur ou par le support) : données effacées et abonnements.
+ * `analyseStopped` : abonnement de l'offre Analyse arrêté ; `vip` : abonnement Campok VIP pris ici résilié (VIP payé
+ * gardé dans l'app jusqu'à `vipUntil`).
+ */
+export function deletedMail(subs: { analyseStopped: boolean; vip: { vipUntil: string | null } | null }, pageUrl: string): ChanceMail {
+  const lines: string[] = [];
+  if (subs.analyseStopped) lines.push('Ton abonnement à l’offre Analyse est arrêté : plus aucun prélèvement ne sera fait.');
+  if (subs.vip) {
+    const day = subs.vip.vipUntil ? frDay(subs.vip.vipUntil) : null;
+    lines.push('Ton abonnement Campok VIP, qui se gérait depuis ce compte, est résilié : plus aucun prélèvement ne sera fait.'
+      + (day ? ` Le VIP déjà payé reste sur ton compte Campok jusqu’au ${day}.` : ''));
+  }
+  if (!lines.length) lines.push('Aucun abonnement n’était en cours : aucun prélèvement ne sera fait.');
+  return {
+    subject: 'Ton compte Chance-o-mètre est supprimé',
+    text:
+      `Bonjour,\n\nTon compte Chance-o-mètre est supprimé. Ont été effacés : ton compte, ton bilan de chance, `
+      + `les mains envoyées au module d’analyse et ton inscription aux nouvelles.\n\n`
+      + `${lines.join('\n\n')}\n\n`
+      + `Les paiements déjà faits restent seulement dans notre comptabilité, le temps exigé par la loi.\n\n`
+      + `Tu peux recréer un compte gratuit quand tu veux sur ${pageUrl}\n${FOOTER}`,
   };
 }
 

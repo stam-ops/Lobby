@@ -14,7 +14,7 @@ import { VipWebService, type VipPlan } from './vip-web.service';
 import { AnalyseWebService, type AnalysePlan } from './analyse-web.service';
 import { CHANCE_LINK_NOTIF_TYPE, chanceTable } from './chance-db';
 import { ActionRow, CAMPOK_HANDS_MAX, CardRow, HandRow, SeatRow, campokHand } from './campok-hands';
-import { cancelMail, ChanceMail, deleteMail, loginMail, noAccountMail, signupMail } from './chance-mails';
+import { cancelMail, ChanceMail, deletedMail, deleteMail, loginMail, noAccountMail, signupMail } from './chance-mails';
 
 /** Durée de validité d'un lien ou d'un code reçu par e-mail. */
 export const LINK_TTL_MINUTES = 15;
@@ -838,11 +838,15 @@ export class ChanceService {
 
   /**
    * Efface le compte et toutes les demandes de cette adresse ; null si aucun compte. Avant : abonnement de l'offre
-   * Analyse arrêté chez Stripe (échec : 503, rien n'est effacé, la suppression se refait).
+   * Analyse arrêté chez Stripe, abonnement Campok VIP pris ici résilié (il ne se gère que depuis ce compte) ; échec :
+   * 503, rien n'est effacé, la suppression se refait. Après : e-mail de confirmation (données effacées, abonnements).
    */
   private async erase(email: string): Promise<number | null> {
-    const [pre] = await this.dataSource.query<{ id: number }[]>(`SELECT chanceuserid AS id FROM ${this.users} WHERE email = ?`, [email]);
-    if (pre) await this.analyseWeb.forget(Number(pre.id));
+    const [pre] = await this.dataSource.query<{ id: number; playerid: number | null }[]>(
+      `SELECT chanceuserid AS id, playerid FROM ${this.users} WHERE email = ?`, [email],
+    );
+    const analyseStopped = pre ? (await this.analyseWeb.forget(Number(pre.id))) > 0 : false;
+    const vip = pre?.playerid != null ? await this.vipWeb.stopForDeletion(Number(pre.playerid)) : null;
     const id = await this.dataSource.transaction(async (tx) => {
       const user = await this.userByEmail(tx, email);
       if (!user) return null;
@@ -854,7 +858,10 @@ export class ChanceService {
       await tx.query(`DELETE FROM ${this.logins} WHERE email = ?`, [email]);
       return user.chanceuserid;
     });
-    if (id != null) await this.mailjet.forget(email);
+    if (id != null) {
+      await this.mailjet.forget(email);
+      await this.send(email, deletedMail({ analyseStopped, vip }, `${this.publicUrl}/chance-o-metre`));
+    }
     return id;
   }
 

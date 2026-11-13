@@ -4,7 +4,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { AnalyseWebService } from './analyse-web.service';
-import { checkoutBranding, createCheckout, PAY_OFF, productImages, stripeRequest, stripeSignatureOk } from './stripe';
+import { checkoutBranding, createCheckout, PAY_OFF, productImages, StripeError, stripeRequest, stripeSignatureOk } from './stripe';
 // Anciens imports : stripeForm et stripeSignatureOk vivent maintenant dans stripe.ts.
 export { stripeForm, stripeSignatureOk } from './stripe';
 
@@ -151,6 +151,29 @@ export class VipWebService {
     await this.stripe('POST', `/subscriptions/${encodeURIComponent(row.subkey)}`, { cancel_at_period_end: 'true' });
     await this.ds.query(`UPDATE playersubscription SET status = 'canceled' WHERE platform = 'stripe' AND subkey = ?`, [row.subkey]);
     this.logger.log(`Abonnement web résilié player=${playerId}`);
+  }
+
+  /**
+   * Suppression du compte Chance-o-mètre relié : l'abonnement pris ici ne se gère que depuis ce compte, il est donc
+   * résilié (fin de la période en cours, le VIP payé reste dans l'app). Renvoie la fin du VIP si un abonnement était en
+   * cours, sinon null. Échec chez Stripe : 503, le compte n'est pas supprimé (à refaire).
+   */
+  async stopForDeletion(playerId: number): Promise<{ vipUntil: string | null } | null> {
+    const [row] = await this.ds.query<{ subkey: string }[]>(
+      `SELECT subkey FROM playersubscription WHERE platform = 'stripe' AND playerid = ? AND status = 'active'
+        ORDER BY updatedts DESC LIMIT 1`, [playerId],
+    );
+    if (!row) return null;
+    const off = 'Suppression impossible pour le moment : réessaie un peu plus tard.';
+    if (!this.key) throw new ServiceUnavailableException(off);
+    try {
+      await this.stripe('POST', `/subscriptions/${encodeURIComponent(row.subkey)}`, { cancel_at_period_end: 'true' });
+    } catch (e) {
+      if (!(e instanceof StripeError && e.stripeStatus === 404)) throw new ServiceUnavailableException(off);
+    }
+    await this.ds.query(`UPDATE playersubscription SET status = 'canceled' WHERE platform = 'stripe' AND subkey = ?`, [row.subkey]);
+    this.logger.log(`Abonnement web résilié à la suppression du compte Chance-o-mètre, player=${playerId}`);
+    return { vipUntil: (await this.status(playerId)).vipUntil };
   }
 
   /** Événement Stripe (corps brut et signature) ; false si la signature est refusée. */
