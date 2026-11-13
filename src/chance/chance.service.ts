@@ -112,6 +112,8 @@ export class ChanceService {
   private readonly sessionSecret: string;
   private readonly publicUrl: string;
   private readonly partnerKey: string;
+  // CHANCE_MAIL_FROM : expéditeur des e-mails du Chance-o-mètre (« Chance-o-mètre <adresse> »), MAIL_FROM sinon.
+  private readonly mailFrom: string | undefined;
   private readonly ready: boolean;
 
   constructor(
@@ -132,6 +134,7 @@ export class ChanceService {
     this.sessionSecret = config.get<string>('CHANCE_SESSION_SECRET', '');
     this.publicUrl = config.get<string>('CHANCE_PUBLIC_URL', 'http://localhost:5174').replace(/\/+$/, '');
     this.partnerKey = config.get<string>('CHANCE_PARTNER_KEY', '');
+    this.mailFrom = config.get<string>('CHANCE_MAIL_FROM', '').trim() || undefined;
     const jwtSecret = config.get<string>('JWT_SECRET', '');
     this.ready = this.tokenSecret.length >= SECRET_MIN && this.sessionSecret.length >= SECRET_MIN
       && this.tokenSecret !== this.sessionSecret && this.sessionSecret !== jwtSecret;
@@ -883,7 +886,7 @@ export class ChanceService {
   }
 
   private async send(to: string, m: ChanceMail) {
-    if (!(await this.mail.send(to, m.subject, m.text))) {
+    if (!(await this.mail.send(to, m.subject, m.text, undefined, this.mailFrom))) {
       this.logger.error(`E-mail « ${m.subject} » non envoyé à ${to}`);
     }
   }

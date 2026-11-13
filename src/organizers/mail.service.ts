@@ -62,14 +62,17 @@ export class MailService {
     this.logger.log(`SMTP configuré : ${host}:${port} (TLS ${secure ? 'implicite' : 'STARTTLS'})`);
   }
 
-  /** Retourne false si l'envoi a échoué — l'appelant décide si c'est bloquant. */
-  async send(to: string, subject: string, text: string, html?: string): Promise<boolean> {
+  /**
+   * Retourne false si l'envoi a échoué — l'appelant décide si c'est bloquant.
+   * `from` : expéditeur propre à l'appelant (« Nom <adresse> »), MAIL_FROM sinon (ex. CHANCE_MAIL_FROM du Chance-o-mètre).
+   */
+  async send(to: string, subject: string, text: string, html?: string, from?: string): Promise<boolean> {
     if (!this.transporter) {
       this.logger.log(`[MAIL NON ENVOYÉ] à=${to} sujet="${subject}"\n${text}`);
       return true;
     }
     try {
-      await this.transporter.sendMail({ from: this.from, to, subject, text, html });
+      await this.transporter.sendMail({ from: from || this.from, to, subject, text, html });
       return true;
     } catch (e) {
       // On ne relaie pas l'erreur du prestataire à l'appelant : elle finirait dans une réponse HTTP
