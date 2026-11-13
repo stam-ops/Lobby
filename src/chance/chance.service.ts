@@ -530,25 +530,54 @@ export class ChanceService {
     };
   }
 
-  async list(search: string, page: number, pageSize: number) {
+  /**
+   * Liste des comptes du backoffice, filtres cumulables : `search` (e-mail), `state` (état du compte : campok = relié,
+   * nocampok, vip, analyse = offre en cours, newsletter), `campok` (pseudo Campok du compte relié), `site` + `pseudo`
+   * (pseudo d'une salle ANJ, cherché dans le registre « un pseudo, un compte » du service public : seule l'empreinte y
+   * est gardée, le pseudo n'est jamais stocké). `pseudoResult` : found, unknown (jamais envoyé), blocked (compte supprimé)
+   * ou unavailable (service public injoignable).
+   */
+  async list(search: string, page: number, pageSize: number,
+    f: { state?: string; campok?: string; site?: string; pseudo?: string } = {}) {
     const size = Math.min(Math.max(pageSize || 50, 1), 200);
     const offset = Math.max(page || 0, 0) * size;
-    const like = `%${String(search ?? '').trim().toLowerCase().replace(/[\\%_]/g, (c) => '\\' + c)}%`;
+    const esc = (v: string) => `%${v.trim().toLowerCase().replace(/[\\%_]/g, (c) => '\\' + c)}%`;
+    const where: string[] = ['u.email LIKE ?'];
+    const args: unknown[] = [esc(String(search ?? ''))];
+    const none = (pseudoResult: string | null = null) => ({ items: [], total: 0, pseudoResult });
+    if (f.state === 'campok') where.push('u.playerid IS NOT NULL');
+    else if (f.state === 'nocampok') where.push('u.playerid IS NULL');
+    else if (f.state === 'vip') where.push('p.accounttype = 1 AND p.endvipts > NOW()');
+    else if (f.state === 'newsletter') where.push('u.newsletter = 1');
+    else if (f.state === 'analyse') {
+      const ids = await this.analyseWeb.activeIds();
+      if (!ids.length) return none();
+      where.push(`u.chanceuserid IN (${ids.map(() => '?').join(', ')})`); args.push(...ids);
+    }
+    if (f.campok?.trim()) { where.push('LOWER(pi.screenname) LIKE ?'); args.push(esc(f.campok)); }
+    let pseudoResult: string | null = null;
+    if (f.site && f.pseudo?.trim()) {
+      const owner = await this.siteOwner(f.site, f.pseudo.trim());
+      if (owner === 'unavailable') return none('unavailable');
+      if (owner == null) return none('unknown');
+      if (owner.blocked) return none('blocked');
+      pseudoResult = 'found';
+      where.push('u.chanceuserid = ?'); args.push(owner.uid);
+    }
+    const from = `FROM ${this.users} u
+       LEFT JOIN playerinfos pi ON pi.playerid = u.playerid
+       LEFT JOIN player p ON p.playerid = u.playerid
+       WHERE ${where.join(' AND ')}`;
     // Compte Campok relié : pseudo et VIP en ce moment (même règle que vipWeb.status) ; offre Analyse en cours.
     const items = await this.dataSource.query<Record<string, unknown>[]>(
       `SELECT u.chanceuserid AS id, u.email, u.newsletter, u.playerid AS playerId, u.creationts AS creationTs,
               u.lastlogints AS lastLoginTs, u.linkts AS linkTs, pi.screenname AS screenName,
               (p.accounttype = 1 AND p.endvipts > NOW()) AS vip, p.endvipts AS vipUntil
-       FROM ${this.users} u
-       LEFT JOIN playerinfos pi ON pi.playerid = u.playerid
-       LEFT JOIN player p ON p.playerid = u.playerid
-       WHERE u.email LIKE ? ORDER BY u.chanceuserid DESC LIMIT ${size} OFFSET ${offset}`,
-      [like],
+       ${from} ORDER BY u.chanceuserid DESC LIMIT ${size} OFFSET ${offset}`,
+      args,
     );
     const ana = await this.analyseWeb.untilOf(items.map((i) => Number(i.id)));
-    const [total] = await this.dataSource.query<{ n: string | number }[]>(
-      `SELECT COUNT(*) AS n FROM ${this.users} WHERE email LIKE ?`, [like],
-    );
+    const [total] = await this.dataSource.query<{ n: string | number }[]>(`SELECT COUNT(*) AS n ${from}`, args);
     return {
       items: items.map((i) => {
         const vip = Number(i.vip) === 1;
@@ -556,7 +585,25 @@ export class ChanceService {
           analyseUntil: ana.get(Number(i.id)) ?? null };
       }),
       total: Number(total.n),
+      pseudoResult,
     };
+  }
+
+  /** Compte rattaché au pseudo d'une salle, lu dans le registre du service public (GET /interne/joueur). */
+  private async siteOwner(site: string, pseudo: string): Promise<{ uid: number; blocked: boolean } | null | 'unavailable'> {
+    if (this.partnerKey.length < SECRET_MIN) return 'unavailable';
+    try {
+      const q = new URLSearchParams({ site, pseudo });
+      const res = await fetch(`${this.publicUrl}/interne/joueur?${q}`, {
+        headers: { Authorization: `Bearer ${this.partnerKey}` }, redirect: 'error', signal: AbortSignal.timeout(SITE_TIMEOUT_MS),
+      });
+      if (!res.ok) { this.logger.warn(`Service public : GET /interne/joueur → ${res.status}`); return 'unavailable'; }
+      const o = ((await res.json()) as { owner?: { uid?: unknown; blocked?: unknown } | null }).owner;
+      return o && Number.isSafeInteger(o.uid) ? { uid: Number(o.uid), blocked: o.blocked === true } : null;
+    } catch (e) {
+      this.logger.warn(`Service public injoignable (${(e as Error).message})`);
+      return 'unavailable';
+    }
   }
 
   /**
@@ -564,7 +611,7 @@ export class ChanceService {
    * dans l'app du joueur relié), et ce que garde le service public (bilan de chance, mains du module d'analyse, profil
    * de jeu), lu sur sa route interne avec la clé partagée. Service public injoignable : `site` = null et `siteError`.
    */
-  async adminDetail(id: number) {
+  async adminDetail(id: number, room: string | null = null) {
     const [u] = await this.dataSource.query<Record<string, unknown>[]>(
       `SELECT u.chanceuserid AS id, u.email, u.newsletter, u.newsletterts AS newsletterTs, u.adult, u.playerid AS playerId,
               u.creationts AS creationTs, u.lastlogints AS lastLoginTs, u.linkts AS linkTs, pi.screenname AS screenName
@@ -577,7 +624,7 @@ export class ChanceService {
       this.analyseWeb.status(id),
       this.analyseWeb.adminPurchases(id),
       pid == null ? { payments: [], subs: [] } : this.vipWeb.adminPurchases(pid),
-      this.siteDetail(id),
+      this.siteDetail(id, room),
     ]);
     const byTs = (a: { ts: string | null }, b: { ts: string | null }) => (b.ts ?? '').localeCompare(a.ts ?? '');
     return {
@@ -590,10 +637,11 @@ export class ChanceService {
   }
 
   /** Données du compte gardées par le service public (GET /interne/compte/:id, clé CHANCE_PARTNER_KEY). */
-  private async siteDetail(id: number): Promise<{ site: Record<string, unknown> | null; siteError: string | null }> {
+  private async siteDetail(id: number, room: string | null): Promise<{ site: Record<string, unknown> | null; siteError: string | null }> {
     if (this.partnerKey.length < SECRET_MIN) return { site: null, siteError: 'CHANCE_PARTNER_KEY absente : données du service public indisponibles.' };
     try {
-      const res = await fetch(`${this.publicUrl}/interne/compte/${id}`, {
+      const q = room ? `?${new URLSearchParams({ site: room })}` : '';
+      const res = await fetch(`${this.publicUrl}/interne/compte/${id}${q}`, {
         headers: { Authorization: `Bearer ${this.partnerKey}` }, redirect: 'error', signal: AbortSignal.timeout(SITE_TIMEOUT_MS),
       });
       if (!res.ok) {
@@ -608,12 +656,48 @@ export class ChanceService {
   }
 
   /** Suppression demandée au support (droit à l'effacement). */
-  async adminDelete(id: number) {
+  async adminDelete(id: number, pseudos: 'bloquer' | 'liberer' = 'bloquer') {
     const [row] = await this.dataSource.query<{ email: string }[]>(
       `SELECT email FROM ${this.users} WHERE chanceuserid = ?`, [id],
     );
-    if (!row || (await this.erase(row.email)) == null) throw new NotFoundException(`Compte ${id} introuvable`);
-    return { deleted: true, id };
+    if (!row) throw new NotFoundException(`Compte ${id} introuvable`);
+    // Données du service public d'abord (bilan, mains, pseudos bloqués ou libérés) : s'il ne répond pas, le compte reste,
+    // sinon ses données y resteraient sans compte et ses pseudos rattachés à un compte disparu.
+    const site = await this.sitePost(`/interne/compte/${id}/supprimer`, { pseudos });
+    if (await this.erase(row.email) == null) throw new NotFoundException(`Compte ${id} introuvable`);
+    return { deleted: true, id, site };
+  }
+
+  /** Backoffice : libère le pseudo d'une salle (bloqué ou rattaché à un compte) dans le registre du service public. */
+  async adminReleasePseudo(site: string, pseudo: string) {
+    if (!['Winamax', 'PokerStars', 'Betclic', 'PMU'].includes(site) || !pseudo?.trim() || pseudo.length > 64)
+      throw new BadRequestException('Salle ou pseudo invalide.');
+    return this.sitePost('/interne/joueur/liberer', { site, pseudo: pseudo.trim() });
+  }
+
+  /** Backoffice : libère tous les pseudos des salles rattachés à un compte. */
+  async adminReleasePseudos(id: number) {
+    return this.sitePost(`/interne/compte/${id}/liberer-pseudos`, {});
+  }
+
+  /** Appel d'une route interne du service public (clé CHANCE_PARTNER_KEY) ; injoignable ou erreur : 503. */
+  private async sitePost(path: string, body: Record<string, unknown>): Promise<Record<string, unknown>> {
+    if (this.partnerKey.length < SECRET_MIN) throw new ServiceUnavailableException('CHANCE_PARTNER_KEY absente : service public injoignable.');
+    let res: Response;
+    try {
+      res = await fetch(`${this.publicUrl}${path}`, {
+        method: 'POST', body: JSON.stringify(body), redirect: 'error', signal: AbortSignal.timeout(SITE_TIMEOUT_MS),
+        headers: { Authorization: `Bearer ${this.partnerKey}`, 'Content-Type': 'application/json' },
+      });
+    } catch (e) {
+      this.logger.warn(`Service public injoignable (${(e as Error).message})`);
+      throw new ServiceUnavailableException('Service public injoignable : rien n’a été fait.');
+    }
+    if (!res.ok) {
+      this.logger.warn(`Service public : POST ${path} → ${res.status}`);
+      throw new ServiceUnavailableException(`Service public : erreur ${res.status}${res.status === 404 ? ' (pas encore mis à jour ?)' : ''} : rien n’a été fait.`);
+    }
+    return await res.json() as Record<string, unknown>;
   }
 
   // ─── Interne ──────────────────────────────────────────────────────────────────────────────────

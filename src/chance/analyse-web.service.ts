@@ -97,6 +97,13 @@ export class AnalyseWebService {
     return m;
   }
 
+  /** Backoffice : comptes dont l'offre Analyse est en cours (filtre de la liste). */
+  async activeIds(): Promise<number[]> {
+    if (!(await this.ready())) return [];
+    const rows = await this.ds.query<{ id: number }[]>(`SELECT chanceuserid AS id FROM ${this.offers} WHERE untilts > NOW()`);
+    return rows.map((r) => Number(r.id));
+  }
+
   /** Backoffice : paiements et abonnements de l'offre Analyse d'un compte, du plus récent au plus ancien. */
   async adminPurchases(uid: number) {
     if (!(await this.ready())) return { payments: [], subs: [] };
@@ -112,6 +119,65 @@ export class AnalyseWebService {
         platform: 'stripe', cents: Number(p.cents), currency: 'EUR', orderId: p.orderid, subKey: p.subkey || null, validated: true })),
       subs: subs.map((s) => ({ product: 'analyse', platform: 'stripe', productId: 'analyse_mois', label: name('mois'), subKey: s.subkey,
         status: s.status, createdTs: new Date(s.created).toISOString(), updatedTs: new Date(s.updated).toISOString(), expiryTs: null })),
+    };
+  }
+
+  /**
+   * Backoffice : résumé des ventes de l'offre Analyse (le VIP vendu sur le web est déjà dans les paiements Campok,
+   * plateforme stripe) : totaux par formule, offres et abonnements en cours, ventes des 12 derniers mois, et liste des
+   * paiements du plus récent au plus ancien (adresse du compte, ou null s'il a été supprimé), recherche par e-mail.
+   */
+  async adminSales(search = '', page = 0, pageSize = 50) {
+    const size = Math.min(200, Math.max(1, pageSize | 0)), from = Math.max(0, page | 0) * size;
+    const empty = { open: false, totals: { payments: 0, cents: 0, buyers: 0, byPlan: [], offersActive: 0, subs: { active: 0, canceled: 0, expired: 0 } },
+      months: [], items: [], total: 0 };
+    if (!(await this.ready())) return empty;
+    const name = (p: string) => ANALYSE_PLANS[p as AnalysePlan]?.name ?? `Offre Analyse (${p})`;
+    const byPlan = await this.ds.query<{ plan: string; n: number | string; cents: number | string; buyers: number | string }[]>(
+      `SELECT plan, COUNT(*) AS n, SUM(cents) AS cents, COUNT(DISTINCT chanceuserid) AS buyers FROM ${this.payments}
+        WHERE product = ? GROUP BY plan ORDER BY plan`, [ANALYSE_PRODUCT],
+    );
+    const [all] = await this.ds.query<{ n: number | string; cents: number | string | null; buyers: number | string }[]>(
+      `SELECT COUNT(*) AS n, SUM(cents) AS cents, COUNT(DISTINCT chanceuserid) AS buyers FROM ${this.payments} WHERE product = ?`, [ANALYSE_PRODUCT],
+    );
+    const [act] = await this.ds.query<{ n: number | string }[]>(`SELECT COUNT(*) AS n FROM ${this.offers} WHERE untilts > NOW()`);
+    const subs = await this.ds.query<{ status: string; n: number | string }[]>(
+      `SELECT status, COUNT(*) AS n FROM ${this.subs} WHERE product = ? GROUP BY status`, [ANALYSE_PRODUCT],
+    );
+    const months = await this.ds.query<{ month: string; plan: string; n: number | string; cents: number | string }[]>(
+      `SELECT DATE_FORMAT(creationts, '%Y-%m') AS month, plan, COUNT(*) AS n, SUM(cents) AS cents FROM ${this.payments}
+        WHERE product = ? AND creationts >= DATE_SUB(DATE_FORMAT(NOW(), '%Y-%m-01'), INTERVAL 11 MONTH)
+        GROUP BY month, plan ORDER BY month DESC`, [ANALYSE_PRODUCT],
+    );
+    const q = search.trim();
+    const where = `p.product = ?${q ? ' AND u.email LIKE ?' : ''}`;
+    const args: unknown[] = [ANALYSE_PRODUCT, ...(q ? [`%${q.replace(/[\\%_]/g, (c) => '\\' + c)}%`] : [])];
+    const [cnt] = await this.ds.query<{ n: number | string }[]>(
+      `SELECT COUNT(*) AS n FROM ${this.payments} p LEFT JOIN ${this.users} u ON u.chanceuserid = p.chanceuserid WHERE ${where}`, args,
+    );
+    const rows = await this.ds.query<{ id: number; uid: number; email: string | null; plan: string; cents: number; orderid: string; subkey: string; ts: Date }[]>(
+      `SELECT p.chancepaymentid AS id, p.chanceuserid AS uid, u.email, p.plan, p.cents, p.orderid, p.subkey, p.creationts AS ts
+        FROM ${this.payments} p LEFT JOIN ${this.users} u ON u.chanceuserid = p.chanceuserid
+        WHERE ${where} ORDER BY p.creationts DESC, p.chancepaymentid DESC LIMIT ? OFFSET ?`, [...args, size, from],
+    );
+    const mon = new Map<string, { month: string; n: number; cents: number; byPlan: Record<string, number> }>();
+    for (const m of months) {
+      const x = mon.get(m.month) ?? { month: m.month, n: 0, cents: 0, byPlan: {} };
+      x.n += Number(m.n); x.cents += Number(m.cents); x.byPlan[m.plan] = (x.byPlan[m.plan] ?? 0) + Number(m.n);
+      mon.set(m.month, x);
+    }
+    const st = (s: string) => Number(subs.find((x) => x.status === s)?.n ?? 0);
+    return {
+      open: await this.enabled(),
+      totals: {
+        payments: Number(all?.n ?? 0), cents: Number(all?.cents ?? 0), buyers: Number(all?.buyers ?? 0),
+        byPlan: byPlan.map((p) => ({ plan: p.plan, label: name(p.plan), n: Number(p.n), cents: Number(p.cents), buyers: Number(p.buyers) })),
+        offersActive: Number(act?.n ?? 0), subs: { active: st('active'), canceled: st('canceled'), expired: st('expired') },
+      },
+      months: [...mon.values()],
+      items: rows.map((r) => ({ id: Number(r.id), userId: Number(r.uid), email: r.email ?? null, plan: r.plan, label: name(r.plan),
+        cents: Number(r.cents), orderId: r.orderid, subKey: r.subkey || null, ts: new Date(r.ts).toISOString() })),
+      total: Number(cnt?.n ?? 0),
     };
   }
 
