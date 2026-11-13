@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
+import { webVipCentsSql } from '../chance/vip-web.service';
 import { DashboardDto, DayCountDto, MonthCountDto } from './dto/dashboard.dto';
 
 /**
@@ -26,7 +27,8 @@ export class DashboardService {
         (SELECT COUNT(*) FROM player WHERE toremove = 0 AND accounttype = 1) AS vipPlayers,
         (SELECT COUNT(DISTINCT playerid) FROM playersession WHERE opened = 1 AND endts = 0) AS onlinePlayers,
         (SELECT COALESCE(SUM(
-           (SELECT o.pricecents FROM offer o WHERE o.productid = pp.productid AND o.producttype = pp.producttype LIMIT 1)
+           COALESCE((SELECT o.pricecents FROM offer o WHERE o.productid = pp.productid AND o.producttype = pp.producttype LIMIT 1),
+             ${webVipCentsSql('pp.productid')})
          ), 0)
          FROM paymentpoker pp
          WHERE pp.validated = 1 AND pp.ts >= DATE_FORMAT(CURDATE(), '%Y-%m-01')) AS monthRevenueCents

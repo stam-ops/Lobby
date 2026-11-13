@@ -27,6 +27,14 @@ export const VIP_PLANS = {
   'mois': { months: 1, cents: 599,  sub: true,  name: 'Campok VIP · abonnement mensuel' },
 } as const;
 export type VipPlan = keyof typeof VIP_PLANS;
+/**
+ * Prix des VIP vendus sur le Chance-o-mètre (productid `web_vip_<formule>`, absents de la table `offer`), en SQL, pour
+ * les listes et totaux du backoffice : `COALESCE(<prix de offer>, ${webVipCentsSql('pp.productid')})`. Construit à partir
+ * de VIP_PLANS (constantes, aucune donnée externe).
+ */
+export const webVipCentsSql = (col: string) =>
+  `CASE ${col} ${Object.entries(VIP_PLANS).map(([k, p]) => `WHEN 'web_vip_${k}' THEN ${p.cents}`).join(' ')} END`;
+export const webVipCurrencySql = (col: string) => `CASE WHEN LEFT(${col}, 8) = 'web_vip_' THEN 'EUR' END`;
 export const VIP_PLAN_KEYS = Object.keys(VIP_PLANS) as VipPlan[];
 const CAMS_PER_MONTH = 30;               // comme le VIP des stores (+30 Cam's/mois)
 
