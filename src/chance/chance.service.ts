@@ -397,6 +397,11 @@ export class ChanceService {
 
   async unlinkCampok(session: string | undefined) {
     const { user } = await this.fromSession(session);
+    // Campok VIP en cours (pass ou abonnement, pris ici ou dans l'app) : le compte reste relié, la page ne propose pas
+    // « Délier » (l'abonnement pris ici se résilie depuis le compte relié).
+    if (user.playerid != null && (await this.vipWeb.status(Number(user.playerid))).vip) {
+      throw new ConflictException('Ton compte Campok reste relié tant que ton Campok VIP est en cours.');
+    }
     await this.dataSource.query(
       `UPDATE ${this.users} SET playerid = NULL, linkts = NULL WHERE chanceuserid = ?`, [user.chanceuserid],
     );
