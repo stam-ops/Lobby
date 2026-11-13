@@ -11,6 +11,7 @@ import { CaptchaService } from '../organizers/captcha.service';
 import { MailjetService } from './mailjet.service';
 import { FcmService } from './fcm.service';
 import { VipWebService, type VipPlan } from './vip-web.service';
+import { AnalyseWebService, type AnalysePlan } from './analyse-web.service';
 import { CHANCE_LINK_NOTIF_TYPE, chanceTable } from './chance-db';
 import { ActionRow, CAMPOK_HANDS_MAX, CardRow, HandRow, SeatRow, campokHand } from './campok-hands';
 import { ChanceMail, deleteMail, loginMail, noAccountMail, signupMail } from './chance-mails';
@@ -68,6 +69,14 @@ export interface ChanceProfile {
   vipSub: 'active' | 'canceled' | null;
   /** Vente du VIP ouverte (clés Stripe présentes). */
   vipShop: boolean;
+  /** Offre Analyse du Chance-o-mètre en cours (salles ANJ sans limite), sans besoin de compte Campok relié. */
+  analyse: boolean;
+  /** Fin de l'offre Analyse (ISO), null sans l'offre. */
+  analyseUntil: string | null;
+  /** Abonnement de l'offre Analyse : 'active', 'canceled' (résilié), null (pack de 12 mois, ou pas d'offre). */
+  analyseSub: 'active' | 'canceled' | null;
+  /** Vente de l'offre Analyse ouverte (clés Stripe présentes, sql/004 passé). */
+  analyseShop: boolean;
 }
 
 export function normEmail(email: unknown): string {
@@ -111,6 +120,7 @@ export class ChanceService {
     private readonly captcha: CaptchaService,
     private readonly fcm: FcmService,
     private readonly vipWeb: VipWebService,
+    private readonly analyseWeb: AnalyseWebService,
     config: ConfigService,
   ) {
     this.users = chanceTable(config, 'chanceuser');
@@ -360,6 +370,19 @@ export class ChanceService {
     return { user: await this.profile(user) };
   }
 
+  // ─── Offre Analyse vendue ici (analyse-web.service.ts) ─────────────────────────────────────────
+
+  async analyseCheckout(session: string | undefined, plan: AnalysePlan) {
+    const { user } = await this.fromSession(session);
+    return this.analyseWeb.checkout(user, plan);
+  }
+
+  async analyseCancel(session: string | undefined) {
+    const { user } = await this.fromSession(session);
+    await this.analyseWeb.cancel(Number(user.chanceuserid));
+    return { user: await this.profile(user) };
+  }
+
   async unlinkCampok(session: string | undefined) {
     const { user } = await this.fromSession(session);
     await this.dataSource.query(
@@ -565,9 +588,11 @@ export class ChanceService {
       campokName = p?.screenname ?? null;
       st = await this.vipWeb.status(Number(u.playerid));
     }
+    const an = await this.analyseWeb.status(Number(u.chanceuserid));
     return {
       id: u.chanceuserid, email: u.email, creationTs: u.creationts,
       newsletter: !!u.newsletter, campok: u.playerid != null, campokName, ...st, vipShop: this.vipWeb.enabled,
+      ...an, analyseShop: await this.analyseWeb.enabled(),
     };
   }
 
@@ -652,8 +677,13 @@ export class ChanceService {
     return { user, iat: p.iat };
   }
 
-  /** Efface le compte et toutes les demandes de cette adresse ; null si aucun compte. */
+  /**
+   * Efface le compte et toutes les demandes de cette adresse ; null si aucun compte. Avant : abonnement de l'offre
+   * Analyse arrêté chez Stripe (échec : 503, rien n'est effacé, la suppression se refait).
+   */
   private async erase(email: string): Promise<number | null> {
+    const [pre] = await this.dataSource.query<{ id: number }[]>(`SELECT chanceuserid AS id FROM ${this.users} WHERE email = ?`, [email]);
+    if (pre) await this.analyseWeb.forget(Number(pre.id));
     const id = await this.dataSource.transaction(async (tx) => {
       const user = await this.userByEmail(tx, email);
       if (!user) return null;

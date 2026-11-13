@@ -3,7 +3,10 @@ import {
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
-import { createHmac, timingSafeEqual } from 'crypto';
+import { AnalyseWebService } from './analyse-web.service';
+import { PAY_OFF, stripeRequest, stripeSignatureOk } from './stripe';
+// Anciens imports : stripeForm et stripeSignatureOk vivent maintenant dans stripe.ts.
+export { stripeForm, stripeSignatureOk } from './stripe';
 
 /**
  * Campok VIP vendu sur le Chance-o-mètre (compte Campok relié), payé par Stripe Checkout : la page de paiement est
@@ -14,7 +17,8 @@ import { createHmac, timingSafeEqual } from 'crypto';
  *    (fin de la période en cours, le VIP payé reste) depuis la page, par `cancel`.
  * Ledger : paymentpoker (platform 'stripe', orderid UNIQUE = id Stripe : un événement rejoué ne crédite pas deux fois),
  * abonnement : playersubscription (platform 'stripe', subkey = id de l'abonnement).
- * Webhook : signature Stripe (STRIPE_WEBHOOK_SECRET) vérifiée sur le corps brut (rawBody de main.ts).
+ * Webhook : signature Stripe (STRIPE_WEBHOOK_SECRET) vérifiée sur le corps brut (rawBody de main.ts). Le même webhook
+ * reçoit l'offre Analyse du Chance-o-mètre (metadata.product = 'analyse') : passée à AnalyseWebService.
  */
 export const VIP_PLANS = {
   '1m':   { months: 1, cents: 599,  sub: false, name: 'Campok VIP · 1 mois' },
@@ -25,41 +29,8 @@ export const VIP_PLANS = {
 export type VipPlan = keyof typeof VIP_PLANS;
 export const VIP_PLAN_KEYS = Object.keys(VIP_PLANS) as VipPlan[];
 const CAMS_PER_MONTH = 30;               // comme le VIP des stores (+30 Cam's/mois)
-const STRIPE_VERSION = '2024-06-20';     // forme des objets lus ci-dessous (les deux formes d'invoice sont lues)
-const SIG_TOLERANCE_S = 300;
-const PAY_OFF = 'Paiement indisponible pour le moment : réessaie un peu plus tard.';
 
 type Obj = Record<string, any>;
-
-/** Paramètres Stripe (application/x-www-form-urlencoded, objets et listes en a[b][0][c]). */
-export function stripeForm(params: Obj, prefix = ''): string[] {
-  const out: string[] = [];
-  for (const [k, v] of Object.entries(params)) {
-    if (v === undefined || v === null) continue;
-    const key = prefix ? `${prefix}[${k}]` : k;
-    if (Array.isArray(v)) v.forEach((x, i) => out.push(...(typeof x === 'object' ? stripeForm(x, `${key}[${i}]`) : [`${encodeURIComponent(`${key}[${i}]`)}=${encodeURIComponent(String(x))}`])));
-    else if (typeof v === 'object') out.push(...stripeForm(v, key));
-    else out.push(`${encodeURIComponent(key)}=${encodeURIComponent(String(v))}`);
-  }
-  return out;
-}
-
-/** En-tête Stripe-Signature (t=…,v1=…) : HMAC-SHA256 de « t.corps », 5 minutes de tolérance. */
-export function stripeSignatureOk(raw: Buffer, header: string | undefined, secret: string, now = Date.now()): boolean {
-  if (!header || !secret) return false;
-  let t = 0; const sigs: string[] = [];
-  for (const part of header.split(',')) {
-    const [k, v] = part.split('=', 2);
-    if (k === 't') t = Number(v);
-    else if (k === 'v1' && v) sigs.push(v);
-  }
-  if (!t || !sigs.length || Math.abs(now / 1000 - t) > SIG_TOLERANCE_S) return false;
-  const expected = createHmac('sha256', secret).update(`${t}.`).update(raw).digest();
-  return sigs.some(s => {
-    const b = Buffer.from(s, 'hex');
-    return b.length === expected.length && timingSafeEqual(b, expected);
-  });
-}
 
 @Injectable()
 export class VipWebService {
@@ -68,7 +39,7 @@ export class VipWebService {
   private readonly whSecret: string;
   private readonly publicUrl: string;
 
-  constructor(private readonly ds: DataSource, config: ConfigService) {
+  constructor(private readonly ds: DataSource, private readonly analyse: AnalyseWebService, config: ConfigService) {
     this.key = config.get<string>('STRIPE_SECRET_KEY', '');
     this.whSecret = config.get<string>('STRIPE_WEBHOOK_SECRET', '');
     this.publicUrl = config.get<string>('CHANCE_PUBLIC_URL', 'http://localhost:5174').replace(/\/+$/, '');
@@ -139,6 +110,7 @@ export class VipWebService {
     if (!raw || !stripeSignatureOk(raw, signature, this.whSecret)) return false;
     let ev: Obj;
     try { ev = JSON.parse(raw.toString('utf8')); } catch { return false; }
+    if (await this.analyse.owns(ev)) { await this.analyse.handle(ev); return true; }
     const o: Obj = ev?.data?.object ?? {};
     switch (ev.type) {
       case 'checkout.session.completed':
@@ -210,24 +182,7 @@ export class VipWebService {
     );
   }
 
-  private async stripe(method: 'GET' | 'POST', path: string, params?: Obj): Promise<Obj> {
-    let res: Response;
-    try {
-      res = await fetch(`https://api.stripe.com/v1${path}`, {
-        method,
-        headers: { Authorization: `Bearer ${this.key}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': STRIPE_VERSION },
-        body: params ? stripeForm(params).join('&') : undefined,
-        signal: AbortSignal.timeout(10_000),
-      });
-    } catch (e) {
-      this.logger.error(`Stripe ${method} ${path} : ${(e as Error).message}`);
-      throw new ServiceUnavailableException(PAY_OFF);
-    }
-    const j: Obj = await res.json().catch(() => ({}));
-    if (!res.ok) {
-      this.logger.error(`Stripe ${method} ${path} : ${res.status} ${j?.error?.message ?? ''}`);
-      throw new ServiceUnavailableException(PAY_OFF);
-    }
-    return j;
+  private stripe(method: 'GET' | 'POST', path: string, params?: Obj): Promise<Obj> {
+    return stripeRequest(this.key, method, path, params, this.logger);
   }
 }

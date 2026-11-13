@@ -1,6 +1,7 @@
 import { ApiProperty } from '@nestjs/swagger';
 import { IsBoolean, IsEmail, IsIn, IsInt, IsOptional, IsString, Matches, Max, MaxLength, Min } from 'class-validator';
 import { VIP_PLAN_KEYS, type VipPlan } from '../vip-web.service';
+import { ANALYSE_PLAN_KEYS, type AnalysePlan } from '../analyse-web.service';
 import { CAMPOK_HANDS_MAX } from '../campok-hands';
 
 /** Lien reçu par e-mail : 32 octets aléatoires en base64url. */
@@ -11,6 +12,13 @@ export class ChanceVipCheckoutDto {
   @ApiProperty({ enum: VIP_PLAN_KEYS })
   @IsIn(VIP_PLAN_KEYS)
   plan: VipPlan;
+}
+
+/** Offre Analyse du Chance-o-mètre : abonnement mensuel ou pack de 12 mois. */
+export class ChanceAnalyseCheckoutDto {
+  @ApiProperty({ enum: ANALYSE_PLAN_KEYS })
+  @IsIn(ANALYSE_PLAN_KEYS)
+  plan: AnalysePlan;
 }
 
 export class ChanceLoginRequestDto {
