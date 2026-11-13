@@ -1,5 +1,7 @@
-import { Injectable } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
+import { chanceTable } from '../chance/chance-db';
 import { webVipCentsSql } from '../chance/vip-web.service';
 import { DashboardDto, DayCountDto, MonthCountDto } from './dto/dashboard.dto';
 
@@ -10,10 +12,34 @@ import { DashboardDto, DayCountDto, MonthCountDto } from './dto/dashboard.dto';
  *  - onlinePlayers: joueurs connectés (session ouverte, endts = 0).
  *  - activePerDay : joueurs distincts ayant ouvert une session, par jour (30 j).
  *  - newPerDay    : nouveaux joueurs (creationts), par jour (30 j).
+ *  - chanceUsers  : comptes du Chance-o-mètre (base `chance`).
+ *  - chanceAnalyseMonthCents : paiements de l'offre Analyse du mois en cours (chancepayment ; le VIP vendu sur le
+ *    Chance-o-mètre est déjà dans monthRevenueCents, via paymentpoker).
  */
 @Injectable()
 export class DashboardService {
-  constructor(private readonly dataSource: DataSource) {}
+  private readonly logger = new Logger('Dashboard');
+  private readonly chanceUsersT: string;
+  private readonly chancePaymentsT: string;
+
+  constructor(private readonly dataSource: DataSource, config: ConfigService) {
+    this.chanceUsersT = chanceTable(config, 'chanceuser');
+    this.chancePaymentsT = chanceTable(config, 'chancepayment');
+  }
+
+  /** Chiffres du Chance-o-mètre ; base ou tables absentes (sql/002, sql/004 pas passés) : 0. */
+  private async chance(): Promise<{ chanceUsers: number; chanceAnalyseMonthCents: number }> {
+    const one = async (sql: string) => {
+      try { return Number((await this.dataSource.query<{ n: number | string | null }[]>(sql))[0]?.n ?? 0); }
+      catch (e) { this.logger.warn(`Chance-o-mètre : ${(e as Error).message}`); return 0; }
+    };
+    const [chanceUsers, chanceAnalyseMonthCents] = await Promise.all([
+      one(`SELECT COUNT(*) AS n FROM ${this.chanceUsersT}`),
+      one(`SELECT COALESCE(SUM(cents), 0) AS n FROM ${this.chancePaymentsT}
+            WHERE product = 'analyse' AND creationts >= DATE_FORMAT(CURDATE(), '%Y-%m-01')`),
+    ]);
+    return { chanceUsers, chanceAnalyseMonthCents };
+  }
 
   async data(days: number): Promise<DashboardDto> {
     // `days` est validé (7/30/90) côté contrôleur → inline sûr (entier).
@@ -48,6 +74,7 @@ export class DashboardService {
       GROUP BY day ORDER BY day
     `);
 
+    const ch = await this.chance();
     const m = metrics[0] ?? { totalPlayers: 0, vipPlayers: 0, onlinePlayers: 0, monthRevenueCents: 0 };
     const num = (rows: DayCountDto[]) => rows.map((r) => ({ day: r.day, count: Number(r.count) }));
 
@@ -56,6 +83,8 @@ export class DashboardService {
       vipPlayers: Number(m.vipPlayers),
       onlinePlayers: Number(m.onlinePlayers),
       monthRevenueCents: Number(m.monthRevenueCents),
+      chanceUsers: ch.chanceUsers,
+      chanceAnalyseMonthCents: ch.chanceAnalyseMonthCents,
       activePerDay: num(activePerDay),
       newPerDay: num(newPerDay),
     };
