@@ -47,12 +47,14 @@ export function stripeSignatureOk(raw: Buffer, header: string | undefined, secre
 }
 
 /** Appel à l'API Stripe ; StripeError si Stripe ne répond pas ou refuse (détail dans les journaux seulement). */
-export async function stripeRequest(key: string, method: 'GET' | 'POST' | 'DELETE', path: string, params: Obj | undefined, logger: Logger): Promise<Obj> {
+export async function stripeRequest(
+  key: string, method: 'GET' | 'POST' | 'DELETE', path: string, params: Obj | undefined, logger: Logger, version = STRIPE_VERSION,
+): Promise<Obj> {
   let res: Response;
   try {
     res = await fetch(`https://api.stripe.com/v1${path}`, {
       method,
-      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': STRIPE_VERSION },
+      headers: { Authorization: `Bearer ${key}`, 'Content-Type': 'application/x-www-form-urlencoded', 'Stripe-Version': version },
       body: params ? stripeForm(params).join('&') : undefined,
       signal: AbortSignal.timeout(10_000),
     });
@@ -66,4 +68,38 @@ export async function stripeRequest(key: string, method: 'GET' | 'POST' | 'DELET
     throw new StripeError(res.status);
   }
   return j;
+}
+
+/**
+ * Image de marque propre à une page de paiement (`branding_settings` : nom en haut de la page et logo), par-dessus celle
+ * du compte Stripe (Paramètres → Image de marque). Paramètre apparu avec la version 2025-09-30.clover de l'API : seule la
+ * création de la page passe par cette version (sa réponse ne sert qu'à `url`). Logo servi par le service public
+ * (`/campok.png`), seulement en https (Stripe va le chercher).
+ */
+const BRANDING_VERSION = '2025-09-30.clover';
+
+export function checkoutBranding(publicUrl: string, displayName: string): Obj | null {
+  if (!/^https:\/\//.test(publicUrl)) return null;
+  return { display_name: displayName, logo: { type: 'url', url: `${publicUrl}/campok.png` } };
+}
+
+/** Image d'un article de la page de paiement (service public en https seulement), sinon aucune. */
+export function productImages(publicUrl: string, file: string): string[] | undefined {
+  return /^https:\/\//.test(publicUrl) ? [`${publicUrl}/${file}`] : undefined;
+}
+
+/**
+ * Page de paiement Stripe Checkout. Image de marque refusée par Stripe (400 : paramètre ou image) : la page est refaite
+ * sans elle, avec celle du compte — une vente ne doit jamais échouer pour un logo.
+ */
+export async function createCheckout(key: string, params: Obj, branding: Obj | null, logger: Logger): Promise<Obj> {
+  if (branding) {
+    try {
+      return await stripeRequest(key, 'POST', '/checkout/sessions', { ...params, branding_settings: branding }, logger, BRANDING_VERSION);
+    } catch (e) {
+      if (!(e instanceof StripeError) || e.stripeStatus !== 400) throw e;
+      logger.warn('Stripe : image de marque de la page de paiement refusée, page faite avec celle du compte');
+    }
+  }
+  return stripeRequest(key, 'POST', '/checkout/sessions', params, logger);
 }

@@ -4,7 +4,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { chanceTable } from './chance-db';
-import { PAY_OFF, StripeError, stripeRequest } from './stripe';
+import { checkoutBranding, createCheckout, PAY_OFF, StripeError, stripeRequest } from './stripe';
 
 /**
  * Offre Analyse du Chance-o-mètre (sql/004_chance_analyse.sql) : mains des salles ANJ analysées et ouvertes sans
@@ -190,7 +190,8 @@ export class AnalyseWebService {
     if ((await this.status(uid)).analyse) throw new ConflictException('Tu as déjà l’offre Analyse.');
     const meta = { product: ANALYSE_PRODUCT, chanceuserid: String(uid), plan };
     const back = `${this.publicUrl}/chance-o-metre`;
-    const s = await stripeRequest(this.key, 'POST', '/checkout/sessions', {
+    // Logo Campok et nom « Chance-o-mètre » en haut de la page de paiement.
+    const s = await createCheckout(this.key, {
       mode: p.sub ? 'subscription' : 'payment',
       locale: 'fr',
       customer_email: user.email,
@@ -203,7 +204,7 @@ export class AnalyseWebService {
       ...(p.sub ? { subscription_data: { metadata: meta } } : { invoice_creation: { enabled: true }, payment_intent_data: { metadata: meta } }),
       success_url: `${back}?analyse=merci#compte`,
       cancel_url: `${back}?analyse=annule#compte`,
-    }, this.logger);
+    }, checkoutBranding(this.publicUrl, 'Chance-o-mètre'), this.logger);
     if (typeof s.url !== 'string') throw new ServiceUnavailableException(PAY_OFF);
     return { url: s.url as string };
   }

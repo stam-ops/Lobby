@@ -4,7 +4,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { DataSource } from 'typeorm';
 import { AnalyseWebService } from './analyse-web.service';
-import { PAY_OFF, stripeRequest, stripeSignatureOk } from './stripe';
+import { checkoutBranding, createCheckout, PAY_OFF, productImages, stripeRequest, stripeSignatureOk } from './stripe';
 // Anciens imports : stripeForm et stripeSignatureOk vivent maintenant dans stripe.ts.
 export { stripeForm, stripeSignatureOk } from './stripe';
 
@@ -116,20 +116,25 @@ export class VipWebService {
     if ((await this.status(pid)).vip) throw new ConflictException('Tu es déjà Campok VIP.');
     const meta = { playerid: String(pid), plan, chanceuserid: String(user.chanceuserid) };
     const back = `${this.publicUrl}/chance-o-metre`;
-    const s = await this.stripe('POST', '/checkout/sessions', {
+    // Logo Campok et nom « Campok » en haut de la page ; image de la formule, celle de la boutique de l'app (service public).
+    const s = await createCheckout(this.key, {
       mode: p.sub ? 'subscription' : 'payment',
       locale: 'fr',
       customer_email: user.email,
       client_reference_id: String(pid),
       line_items: [{
         quantity: 1,
-        price_data: { currency: 'eur', unit_amount: p.cents, product_data: { name: p.name }, ...(p.sub ? { recurring: { interval: 'month' } } : {}) },
+        price_data: {
+          currency: 'eur', unit_amount: p.cents,
+          product_data: { name: p.name, images: productImages(this.publicUrl, `vip-${plan}.png`) },
+          ...(p.sub ? { recurring: { interval: 'month' } } : {}),
+        },
       }],
       metadata: meta,
       ...(p.sub ? { subscription_data: { metadata: meta } } : { invoice_creation: { enabled: true }, payment_intent_data: { metadata: meta } }),
       success_url: `${back}?vip=merci#compte`,
       cancel_url: `${back}?vip=annule#compte`,
-    });
+    }, checkoutBranding(this.publicUrl, 'Campok'), this.logger);
     if (typeof s.url !== 'string') throw new ServiceUnavailableException(PAY_OFF);
     return { url: s.url as string };
   }
