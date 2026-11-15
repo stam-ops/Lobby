@@ -1,6 +1,8 @@
 import { Body, Controller, DefaultValuePipe, Delete, Get, HttpCode, Param, ParseIntPipe, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { Auth, Roles, Strict } from '../auth/auth.decorator';
+import { AuthUser } from '../auth/auth.types';
+import { CurrentUser } from '../auth/current-user.decorator';
 import { AnalyseWebService } from './analyse-web.service';
 import { ChanceService } from './chance.service';
 
@@ -85,6 +87,14 @@ export class ChanceAdminController {
   @ApiOperation({ summary: 'Libère tous les pseudos des salles rattachés à un compte (ses mains restent)' })
   releasePseudos(@Param('id', ParseIntPipe) id: number) {
     return this.chance.adminReleasePseudos(id);
+  }
+
+  @Post('users/:id/analyse-gift')
+  @Roles('admin')
+  @HttpCode(200)
+  @ApiOperation({ summary: 'Offre l’offre Analyse pour 1, 3 ou 6 mois (ajoutés à l’offre en cours, 0 €, hors ventes)' })
+  giftAnalyse(@Param('id', ParseIntPipe) id: number, @Body() body: { months?: number }, @CurrentUser() user?: AuthUser) {
+    return this.analyse.adminGift(id, Number(body?.months), user?.kind === 'admin' ? user.adminId : undefined);
   }
 
   @Post('pseudo/release')

@@ -25,6 +25,9 @@ export const ANALYSE_PLANS = {
 } as const;
 export type AnalysePlan = keyof typeof ANALYSE_PLANS;
 export const ANALYSE_PLAN_KEYS = Object.keys(ANALYSE_PLANS) as AnalysePlan[];
+/** Offre Analyse offerte par le backoffice : 1, 3 ou 6 mois, notée dans chancepayment (0 €, hors ventes). */
+export const ANALYSE_GIFT_PRODUCT = 'offert';
+export const ANALYSE_GIFT_MONTHS = [1, 3, 6] as const;
 const RENEW_GRACE_DAYS = 1;              // abonnement : marge après la fin de la période, le temps du renouvellement
 const TABLES_RECHECK_MS = 60_000;        // sql/004 pas encore passé : revérifié au plus une fois par minute
 
@@ -107,19 +110,46 @@ export class AnalyseWebService {
   /** Backoffice : paiements et abonnements de l'offre Analyse d'un compte, du plus récent au plus ancien. */
   async adminPurchases(uid: number) {
     if (!(await this.ready())) return { payments: [], subs: [] };
-    const pays = await this.ds.query<{ plan: string; cents: number; orderid: string; subkey: string; ts: Date }[]>(
-      `SELECT plan, cents, orderid, subkey, creationts AS ts FROM ${this.payments} WHERE chanceuserid = ? ORDER BY creationts DESC`, [uid],
+    const pays = await this.ds.query<{ product: string; plan: string; cents: number; orderid: string; subkey: string; ts: Date }[]>(
+      `SELECT product, plan, cents, orderid, subkey, creationts AS ts FROM ${this.payments} WHERE chanceuserid = ? ORDER BY creationts DESC`, [uid],
     );
     const subs = await this.ds.query<{ subkey: string; status: string; created: Date; updated: Date }[]>(
       `SELECT subkey, status, creationts AS created, updatedts AS updated FROM ${this.subs} WHERE chanceuserid = ? ORDER BY updatedts DESC`, [uid],
     );
     const name = (p: string) => ANALYSE_PLANS[p as AnalysePlan]?.name ?? `Offre Analyse (${p})`;
     return {
-      payments: pays.map((p) => ({ ts: new Date(p.ts).toISOString(), product: 'analyse', plan: p.plan, label: name(p.plan),
-        platform: 'stripe', cents: Number(p.cents), currency: 'EUR', orderId: p.orderid, subKey: p.subkey || null, validated: true })),
+      payments: pays.map((p) => p.product === ANALYSE_GIFT_PRODUCT
+        ? { ts: new Date(p.ts).toISOString(), product: 'offert', plan: p.plan, label: `Offre Analyse offerte · ${parseInt(p.plan, 10)} mois`,
+          platform: 'backoffice', cents: 0, currency: 'EUR', orderId: p.orderid, subKey: null, validated: true }
+        : { ts: new Date(p.ts).toISOString(), product: 'analyse', plan: p.plan, label: name(p.plan),
+        platform: 'stripe', cents: Number(p.cents), currency: 'EUR', orderId: p.orderid, subKey: p.subkey || null, validated: true }),
       subs: subs.map((s) => ({ product: 'analyse', platform: 'stripe', productId: 'analyse_mois', label: name('mois'), subKey: s.subkey,
         status: s.status, createdTs: new Date(s.created).toISOString(), updatedTs: new Date(s.updated).toISOString(), expiryTs: null })),
     };
+  }
+
+  /**
+   * Backoffice : offre Analyse offerte pour 1, 3 ou 6 mois, ajoutés à la fin de l'offre en cours (ou à partir de
+   * maintenant), jamais raccourcie. Notée dans chancepayment (produit 'offert', 0 €) : visible dans les achats du
+   * compte, hors des ventes (adminSales ne compte que le produit 'analyse'). Sans abonnement : rien à résilier.
+   */
+  async adminGift(uid: number, months: number, adminId?: number) {
+    if (!(ANALYSE_GIFT_MONTHS as readonly number[]).includes(months)) throw new BadRequestException('Durée invalide : 1, 3 ou 6 mois.');
+    if (!(await this.ready())) throw new ServiceUnavailableException('Offre Analyse indisponible : sql/004_chance_analyse.sql pas encore passé.');
+    const [u] = await this.ds.query<{ n: number }[]>(`SELECT 1 AS n FROM ${this.users} WHERE chanceuserid = ?`, [uid]);
+    if (!u) throw new NotFoundException('Compte introuvable.');
+    const orderId = `offert:${uid}:${adminId ?? 0}:${Date.now()}`;
+    await this.ds.query(
+      `INSERT INTO ${this.payments} (chanceuserid, product, plan, cents, orderid, subkey) VALUES (?, ?, ?, 0, ?, '')`,
+      [uid, ANALYSE_GIFT_PRODUCT, `${months}m`, orderId],
+    );
+    await this.ds.query(
+      `INSERT INTO ${this.offers} (chanceuserid, untilts) VALUES (?, NOW() + INTERVAL ? MONTH)
+       ON DUPLICATE KEY UPDATE untilts = GREATEST(untilts, NOW()) + INTERVAL ? MONTH`,
+      [uid, months, months],
+    );
+    this.logger.log(`Offre Analyse offerte compte=${uid} (${months} mois, admin ${adminId ?? '?'})`);
+    return this.status(uid);
   }
 
   /**
