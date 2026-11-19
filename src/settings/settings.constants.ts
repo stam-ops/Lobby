@@ -24,6 +24,14 @@ export interface ConfigField {
   readOnly?: boolean;
   /** Explication affichée à côté du champ. */
   note?: string;
+  /** Libellé affiché à la place du nom de colonne brut. */
+  label?: string;
+  /**
+   * Pour un `flag` : libellés et valeurs des deux options (défaut On=1 / Off=0). Permet
+   * d'exposer une colonne 0/1 sous une sémantique métier — ex. « Mode Dating » Oui=0 / Non=1,
+   * sans inverser la valeur stockée.
+   */
+  options?: { value: string; label: string }[];
 }
 
 export interface ConfigGroup {
@@ -43,6 +51,7 @@ export interface ConfigPage {
 const GP = 'generalparameters';
 const SL = 'sociallimit';
 const CC = 'costconfig';
+const MG = 'mixedgenderssngparameters';
 
 export const CONFIG_PAGES: Record<string, ConfigPage> = {
   [GP]: {
@@ -53,6 +62,23 @@ export const CONFIG_PAGES: Record<string, ConfigPage> = {
         note: 'Le nombre max de connexions se règle par serveur front (Serveurs → Fronts).',
         fields: [
           { table: GP, name: 'fbloginenabled', type: 'flag', note: 'affichage du bouton de login Facebook' },
+        ],
+      },
+      {
+        title: 'Mode Dating (tables CamDate)',
+        warning: 'Affecte la formation des tables CamDate (mixedgenderssngparameters.allowsamesex).',
+        fields: [
+          {
+            table: MG, name: 'allowsamesex', type: 'flag', label: 'Mode Dating',
+            // allowsamesex 0 = 1 homme + 1 femme (rencontre) ; 1 = n'importe quels joueurs.
+            // Dating « Oui » correspond donc à allowsamesex = 0 : on l'expose via les libellés
+            // d'options, sans inverser la valeur stockée.
+            options: [{ value: '0', label: 'Oui' }, { value: '1', label: 'Non' }],
+            note: 'Oui (défaut, état de prod) : matching 1 homme + 1 femme, présentation « CamDate » '
+              + 'côté app (couple, « gratuit pour les femmes »). '
+              + 'Non : mode Heads-Up — 2 joueurs du même sexe peuvent former une table, l\'app bascule '
+              + 'en présentation neutre « Heads-Up ».',
+          },
         ],
       },
       {
