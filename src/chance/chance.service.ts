@@ -14,7 +14,7 @@ import { VipWebService, type VipPlan } from './vip-web.service';
 import { AnalyseWebService, type AnalysePlan } from './analyse-web.service';
 import { CHANCE_LINK_NOTIF_TYPE, chanceTable } from './chance-db';
 import { ActionRow, CAMPOK_HANDS_MAX, CardRow, HandRow, SeatRow, campokHand } from './campok-hands';
-import { cancelMail, ChanceMail, deletedMail, deleteMail, loginMail, noAccountMail, signupMail } from './chance-mails';
+import { cancelMail, ChanceMail, deletedMail, deleteMail, loginMail, noAccountMail, signupMail, welcomeMail } from './chance-mails';
 
 /** Durée de validité d'un lien ou d'un code reçu par e-mail. */
 export const LINK_TTL_MINUTES = 15;
@@ -254,6 +254,11 @@ export class ChanceService {
     });
     if (!done) throw new BadRequestException(BAD_LINK);
     if (done.created && done.user.newsletter) await this.mailjet.subscribe(done.user.email);
+    // Lien de la page pour l'ordinateur (source « email / bienvenue » du comptage anonyme du service public).
+    if (done.created) {
+      await this.send(done.user.email, welcomeMail(`${this.publicUrl}/chance-o-metre?utm_source=email&utm_campaign=bienvenue`))
+        .catch((e) => this.logger.error(`E-mail de bienvenue non envoyé : ${e}`));
+    }
     return { session: await this.sign(done.user), user: await this.profile(done.user), created: done.created };
   }
 

@@ -30,6 +30,29 @@ export function signupMail(link: string, code: string): ChanceMail {
   };
 }
 
+/**
+ * Bienvenue, envoyé une fois le compte créé : le lien de la page à ouvrir sur l'ordinateur (la plupart des visiteurs
+ * arrivent sur téléphone, leurs historiques sont sur l'ordinateur), où trouver ses historiques, prévention.
+ */
+export function welcomeMail(pageUrl: string): ChanceMail {
+  return {
+    subject: 'Bienvenue au Chance-o-mètre : ton lien pour l’ordinateur',
+    text:
+      `Bonjour,\n\nTon compte gratuit au Chance-o-mètre est créé.\n\n`
+      + `Pour faire ta vérification, ouvre ce lien sur l’ordinateur où tu joues : c’est là que le logiciel de la salle `
+      + `enregistre tes historiques de mains.\n\n${pageUrl}\n\n`
+      + `Connecte-toi avec cette adresse e-mail (onglet « Mon compte ») : ton bilan de chance sera gardé et complété à chaque visite.\n\n`
+      + `Où sont tes historiques ?\n`
+      + `- Winamax : Documents\\Winamax Poker\\accounts\\TON_PSEUDO\\history\n`
+      + `- PokerStars : %LOCALAPPDATA%\\PokerStars.FR\\HandHistory (ou, dans l’appli : Compte → Historique → Historique des mains, `
+      + `reçu par e-mail, à coller sur la page)\n`
+      + `- Betclic : export de l’historique des mains depuis le logiciel sur ordinateur (un fichier .zip)\n`
+      + `- PMU : %LOCALAPPDATA%\\PMU Poker\\data\n\n`
+      + `Le Chance-o-mètre s’utilise hors table, après la session. Jouer comporte des risques : endettement, isolement, `
+      + `dépendance. Pour être aidé, appelle le 09 74 75 13 13 (appel non surtaxé).\n${FOOTER}`,
+  };
+}
+
 /** Demande de connexion pour une adresse sans compte : même délai et même réponse côté page. */
 export function noAccountMail(pageUrl: string): ChanceMail {
   return {
