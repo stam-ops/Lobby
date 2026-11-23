@@ -22,6 +22,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { PaymentsModule } from './payments/payments.module';
 import { GamePlayersModule } from './gameplayers/gameplayers.module';
 import { SettingsModule } from './settings/settings.module';
+import { BotsModule } from './bots/bots.module';
 import { WebhooksModule } from './webhooks/webhooks.module';
 import { WebrtcModule } from './webrtc/webrtc.module';
 import { GametableEntity } from './lobby/entities/gametable.entity';
@@ -70,6 +71,7 @@ import { BackofficeUserEntity } from './auth/entities/backoffice-user.entity';
     PaymentsModule,
     GamePlayersModule,
     SettingsModule,
+    BotsModule,
     WebhooksModule,
     WebrtcModule,
     OrganizersModule,
