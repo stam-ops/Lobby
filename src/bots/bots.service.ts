@@ -11,6 +11,7 @@ import { DataSource } from 'typeorm';
 const PARAM_COLS = [
   'enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled',
   'botfilldelayms', 'cashhandoffthreshold', 'sngseedbots', 'maxonlineforbots',
+  'cashseatminutes', 'cashpauseminutes', 'sngmaxstreak', 'sngrestminutes',
 ];
 const FLAG_COLS = new Set(['enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled']);
 
