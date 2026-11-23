@@ -32,8 +32,8 @@ export class BotsController {
   @Post('accounts')
   @Roles('admin')
   @ApiOperation({ summary: 'Ajouter un compte au pool (playerId existant)' })
-  addAccount(@Body() body: { playerId: number; sex?: number }) {
-    return this.bots.addAccount(Number(body.playerId), Number(body.sex ?? 0));
+  addAccount(@Body() body: { playerId: number; sex?: number; level?: number }) {
+    return this.bots.addAccount(Number(body.playerId), Number(body.sex ?? 0), Number(body.level ?? 1));
   }
 
   @Patch('accounts/:playerId')
@@ -41,9 +41,9 @@ export class BotsController {
   @ApiOperation({ summary: 'Modifier sexe / actif d\'un compte bot' })
   updateAccount(
     @Param('playerId', ParseIntPipe) playerId: number,
-    @Body() body: { sex?: number; active?: number },
+    @Body() body: { sex?: number; active?: number; level?: number },
   ) {
-    return this.bots.updateAccount(playerId, body.sex, body.active);
+    return this.bots.updateAccount(playerId, body.sex, body.active, body.level);
   }
 
   @Delete('accounts/:playerId')

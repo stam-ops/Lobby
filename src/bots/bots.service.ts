@@ -48,7 +48,7 @@ export class BotsService {
 
   async listAccounts(): Promise<unknown[]> {
     return this.ds.query(
-      `SELECT ba.playerid AS id, ba.playerid AS playerId, ba.sex AS sex, ba.active AS active,
+      `SELECT ba.playerid AS id, ba.playerid AS playerId, ba.sex AS sex, ba.active AS active, ba.level AS level,
               COALESCE(pa.amount, 0) AS amount, COALESCE(pa.cams, 0) AS cams, pi.screenname AS screenName
          FROM botaccount ba
          LEFT JOIN playeraccount pa ON pa.playerid = ba.playerid
@@ -57,22 +57,28 @@ export class BotsService {
     );
   }
 
-  async addAccount(playerId: number, sex: number): Promise<unknown[]> {
+  async addAccount(playerId: number, sex: number, level: number): Promise<unknown[]> {
     if (!Number.isInteger(playerId) || playerId <= 0) throw new BadRequestException('playerId invalide');
     const sx = sex === 1 ? 1 : 0;
+    const lvl = level === 0 || level === 2 ? level : 1; // 0=facile 1=intermediaire 2=fort
     const exists = await this.ds.query(`SELECT 1 FROM botaccount WHERE playerid = ? LIMIT 1`, [playerId]);
     if (exists.length) throw new BadRequestException('Compte bot deja dans le pool');
     const pa = await this.ds.query(`SELECT 1 FROM playeraccount WHERE playerid = ? LIMIT 1`, [playerId]);
     if (!pa.length) throw new BadRequestException('playerid inconnu (aucun compte joueur)');
-    await this.ds.query(`INSERT INTO botaccount (playerid, sex, active) VALUES (?, ?, 1)`, [playerId, sx]);
+    await this.ds.query(`INSERT INTO botaccount (playerid, sex, active, level) VALUES (?, ?, 1, ?)`, [playerId, sx, lvl]);
     return this.listAccounts();
   }
 
-  async updateAccount(playerId: number, sex?: number, active?: number): Promise<unknown[]> {
+  async updateAccount(playerId: number, sex?: number, active?: number, level?: number): Promise<unknown[]> {
     const sets: string[] = [];
     const args: number[] = [];
     if (sex !== undefined && sex !== null) { sets.push('sex = ?'); args.push(Number(sex) === 1 ? 1 : 0); }
     if (active !== undefined && active !== null) { sets.push('active = ?'); args.push(Number(active) ? 1 : 0); }
+    if (level !== undefined && level !== null) {
+      const l = Number(level);
+      sets.push('level = ?');
+      args.push(l === 0 || l === 2 ? l : 1);
+    }
     if (!sets.length) throw new BadRequestException('Rien a mettre a jour');
     args.push(playerId);
     await this.ds.query(`UPDATE botaccount SET ${sets.join(', ')} WHERE playerid = ?`, args);
