@@ -52,7 +52,11 @@ export class BotsService {
   async listAccounts(): Promise<unknown[]> {
     return this.ds.query(
       `SELECT ba.playerid AS id, ba.playerid AS playerId, ba.sex AS sex, ba.active AS active, ba.level AS level,
-              COALESCE(pa.amount, 0) AS amount, COALESCE(pa.cams, 0) AS cams, pi.screenname AS screenName
+              COALESCE(pa.amount, 0) AS amount, COALESCE(pa.cams, 0) AS cams, pi.screenname AS screenName,
+              (SELECT COUNT(*) FROM friendrelation fr
+                WHERE fr.playeridto = ba.playerid AND fr.friendrelationstate = 2) AS friendReqCount,
+              (SELECT COUNT(*) FROM notification n
+                WHERE n.playerid = ba.playerid AND n.notificationtype = 4 AND n.isread = 0) AS campokeCount
          FROM botaccount ba
          LEFT JOIN playeraccount pa ON pa.playerid = ba.playerid
          LEFT JOIN playerinfos   pi ON pi.playerid = ba.playerid
@@ -148,9 +152,17 @@ export class BotsService {
     return this.listFriendRequests(botId);
   }
 
-  /** Campokes (messages) RECUS par le bot — pour pouvoir y repondre. */
+  /**
+   * Campokes (messages) RECUS par le bot — pour pouvoir y repondre.
+   * Effet de bord : marque LUS les campokes recus non lus du bot (notification campokeReceived=4),
+   * ce qui eteint le badge "non lus" une fois la popup ouverte.
+   */
   async listCampokes(botId: number): Promise<unknown[]> {
     await this.assertBot(botId);
+    await this.ds.query(
+      `UPDATE notification SET isread = 1 WHERE playerid = ? AND notificationtype = 4 AND isread = 0`,
+      [botId],
+    );
     return this.ds.query(
       `SELECT cp.campokeid AS campokeId, cp.playeridfrom AS fromId, pi.screenname AS fromScreenName,
               cp.invitationtype AS inviteType, cp.message AS message
