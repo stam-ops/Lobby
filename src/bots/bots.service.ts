@@ -12,8 +12,10 @@ const PARAM_COLS = [
   'enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled',
   'botfilldelayms', 'cashhandoffthreshold', 'sngseedbots', 'maxonlineforbots',
   'cashseatminutes', 'cashpauseminutes', 'sngmaxstreak', 'sngrestminutes',
+  'chatenabled', 'giftenabled', 'giftminminutes', 'giftmaxminutes',
 ];
-const FLAG_COLS = new Set(['enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled']);
+const FLAG_COLS = new Set(['enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled',
+  'chatenabled', 'giftenabled']);
 
 @Injectable()
 export class BotsService {
