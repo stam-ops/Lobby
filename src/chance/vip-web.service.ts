@@ -9,7 +9,7 @@ import { checkoutBranding, createCheckout, PAY_OFF, productImages, StripeError, 
 export { stripeForm, stripeSignatureOk } from './stripe';
 
 /**
- * Campok VIP vendu sur le Chance-o-mètre (compte Campok relié), payé par Stripe Checkout : la page de paiement est
+ * Campok VIP vendu sur le Chance-o-mètre (compte Campok relié ; vente fermée, voir VIP_WEB_SALE), payé par Stripe Checkout : la page de paiement est
  * celle de Stripe, aucune donnée de carte ne passe par nos serveurs. Mêmes avantages que le VIP des stores :
  * player.accounttype = 1, endvipts PROLONGÉ (GREATEST(endvipts, NOW()) + n mois, jamais écrasé), 30 Cam's par mois.
  *  - pass 1, 3 ou 6 mois : paiement unique, crédité à `checkout.session.completed` (ou `async_payment_succeeded`) ;
@@ -37,6 +37,13 @@ export const webVipCentsSql = (col: string) =>
 export const webVipCurrencySql = (col: string) => `CASE WHEN LEFT(${col}, 8) = 'web_vip_' THEN 'EUR' END`;
 export const VIP_PLAN_KEYS = Object.keys(VIP_PLANS) as VipPlan[];
 const CAMS_PER_MONTH = 30;               // comme le VIP des stores (+30 Cam's/mois)
+/**
+ * Vente du VIP sur le Chance-o-mètre fermée le 24 novembre 2026 : Stripe n'encaisse que l'offre Analyse (le VIP, qui
+ * donne des Cam's, se prend seulement dans la boutique de l'app). Les abonnements pris avant restent gérés : webhook
+ * (renouvellements) et résiliation.
+ */
+export const VIP_WEB_SALE = false;
+const SALE_CLOSED = 'Le Campok VIP se prend dans l’application Campok, depuis sa boutique.';
 
 type Obj = Record<string, any>;
 
@@ -53,8 +60,8 @@ export class VipWebService {
     this.publicUrl = config.get<string>('CHANCE_PUBLIC_URL', 'http://localhost:5174').replace(/\/+$/, '');
   }
 
-  /** Vente ouverte : clés Stripe présentes. */
-  get enabled() { return !!this.key && !!this.whSecret; }
+  /** Vente ouverte : VIP_WEB_SALE et clés Stripe présentes. */
+  get enabled() { return VIP_WEB_SALE && !!this.key && !!this.whSecret; }
 
   /** VIP en cours et abonnement web (Stripe) encore actif ou résilié, pour le profil. */
   async status(playerId: number): Promise<{ vip: boolean; vipUntil: string | null; vipSub: 'active' | 'canceled' | null }> {
@@ -110,6 +117,7 @@ export class VipWebService {
   async checkout(user: { chanceuserid: number; email: string; playerid: number | null }, plan: VipPlan) {
     const p = VIP_PLANS[plan];
     if (!p) throw new BadRequestException('Formule inconnue.');
+    if (!VIP_WEB_SALE) throw new BadRequestException(SALE_CLOSED);
     if (user.playerid == null) throw new BadRequestException('Relie d’abord ton compte Campok.');
     if (!this.enabled) throw new ServiceUnavailableException(PAY_OFF);
     const pid = Number(user.playerid);
