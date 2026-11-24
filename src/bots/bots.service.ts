@@ -12,7 +12,7 @@ const PARAM_COLS = [
   'enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled',
   'botfilldelayms', 'cashhandoffthreshold', 'sngseedbots', 'maxonlineforbots',
   'cashseatminutes', 'cashpauseminutes', 'sngmaxstreak', 'sngrestminutes',
-  'chatenabled', 'giftenabled', 'giftminminutes', 'giftmaxminutes',
+  'chatenabled', 'giftenabled', 'giftminminutes', 'giftmaxminutes', 'bigpotbb',
 ];
 const FLAG_COLS = new Set(['enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled',
   'chatenabled', 'giftenabled']);
@@ -102,5 +102,88 @@ export class BotsService {
       if (cams) await em.query(`UPDATE playeraccount SET cams = cams + ? WHERE playerid = ?`, [Math.trunc(cams), playerId]);
     });
     return this.listAccounts();
+  }
+
+  // ── Phase 3 : vie sociale des bots (demandes d'amis + campokes), pilotee au BO ────────────────
+  // Replique les ecritures DB de Social.friendRequestAnswer / Social.addNewCampoke (le flux utilise
+  // aujourd'hui par FrontWebCampok). notification.bonusid = valeur BonusType (reclamable cote client).
+
+  private async assertBot(playerId: number): Promise<void> {
+    const b = await this.ds.query(`SELECT 1 FROM botaccount WHERE playerid = ? LIMIT 1`, [playerId]);
+    if (!b.length) throw new NotFoundException('Compte bot introuvable');
+  }
+
+  /** Demandes d'amis RECUES par le bot, en attente (friendrelationstate=2, le bot est la cible). */
+  async listFriendRequests(botId: number): Promise<unknown[]> {
+    await this.assertBot(botId);
+    return this.ds.query(
+      `SELECT fr.friendrelationid AS relationId, fr.playeridfrom AS fromId,
+              pi.screenname AS fromScreenName
+         FROM friendrelation fr
+         JOIN playerinfos pi ON pi.playerid = fr.playeridfrom
+        WHERE fr.playeridto = ? AND fr.friendrelationstate = 2
+        ORDER BY fr.friendrelationid DESC`,
+      [botId],
+    );
+  }
+
+  /** Le bot ACCEPTE une demande d'ami (friendrelationstate -> 0) + notifie le demandeur. */
+  async acceptFriendRequest(botId: number, fromId: number): Promise<unknown[]> {
+    await this.assertBot(botId);
+    const rows = await this.ds.query(
+      `SELECT friendrelationid FROM friendrelation
+        WHERE playeridfrom = ? AND playeridto = ? AND friendrelationstate = 2 LIMIT 1`,
+      [fromId, botId],
+    );
+    if (!rows.length) throw new BadRequestException('Aucune demande d\'ami en attente de ce joueur');
+    const relationId = Number(rows[0].friendrelationid);
+    await this.ds.transaction(async (em) => {
+      await em.query(`UPDATE friendrelation SET friendrelationstate = 0 WHERE friendrelationid = ?`, [relationId]);
+      // NotificationType.askFriendAnswerReceived=2, BonusType.acceptedInvitationBonus=9 (reclamable).
+      await em.query(
+        `INSERT INTO notification (notificationtype, playerid, friendrelationid, bonusid) VALUES (2, ?, ?, 9)`,
+        [fromId, relationId],
+      );
+    });
+    return this.listFriendRequests(botId);
+  }
+
+  /** Campokes (messages) RECUS par le bot — pour pouvoir y repondre. */
+  async listCampokes(botId: number): Promise<unknown[]> {
+    await this.assertBot(botId);
+    return this.ds.query(
+      `SELECT cp.campokeid AS campokeId, cp.playeridfrom AS fromId, pi.screenname AS fromScreenName,
+              cp.invitationtype AS inviteType, cp.message AS message
+         FROM campoke cp
+         JOIN playerinfos pi ON pi.playerid = cp.playeridfrom
+        WHERE cp.playeridto = ?
+        ORDER BY cp.campokeid DESC
+        LIMIT 50`,
+      [botId],
+    );
+  }
+
+  /** Le bot REPOND par un campoke texte (invitationtype=0=textOnly) + notifie le destinataire. */
+  async replyCampoke(botId: number, toId: number, message: string): Promise<unknown[]> {
+    await this.assertBot(botId);
+    const msg = (message ?? '').trim().slice(0, 150);
+    if (!msg) throw new BadRequestException('Message vide');
+    if (!Number.isInteger(toId) || toId <= 0) throw new BadRequestException('Destinataire invalide');
+    const to = await this.ds.query(`SELECT 1 FROM player WHERE playerid = ? LIMIT 1`, [toId]);
+    if (!to.length) throw new BadRequestException('Destinataire inconnu');
+    await this.ds.transaction(async (em) => {
+      // CampokeInvitationType.textOnly = 0.
+      const res = await em.query(
+        `INSERT INTO campoke (playeridfrom, playeridto, invitationtype, message) VALUES (?, ?, 0, ?)`,
+        [botId, toId, msg],
+      );
+      const campokeId = Number(res?.insertId);
+      // NotificationType.campokeReceived=4, BonusType.receivedCampokeBonus=11 (reclamable).
+      await em.query(
+        `INSERT INTO notification (notificationtype, playerid, campokeid, bonusid) VALUES (4, ?, ?, 11)`,
+        [toId, campokeId],
+      );
+    });
+    return this.listCampokes(botId);
   }
 }

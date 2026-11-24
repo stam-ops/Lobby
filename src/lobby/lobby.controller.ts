@@ -45,9 +45,10 @@ export class LobbyController {
 
   @ApiTags('Cash Game Tables')
   @ApiOperation({
-    summary: 'Tables de cash game où un AMI du joueur est assis (et où le joueur ne l\'est pas)',
-    description: 'Sert à mettre ces tables en avant sur le lobby. Une table où le joueur s\'assoit '
-      + 'en sort automatiquement (elle devient une table active normale) → pas de doublon.',
+    summary: 'Tables de cash game ACTIVES a mettre en avant (occupees, ou le joueur ne s\'est pas assis)',
+    description: 'Tables publiques occupees (>= 1 joueur, bots inclus) + tables privees ou un AMI est assis. '
+      + 'friendCount>0 => des amis y jouent (badge vert + noms) ; sinon affichage neutre (N joueurs). '
+      + 'Une table ou le joueur s\'assoit en sort (pas de doublon avec ses tables actives).',
   })
   @ApiParam({ name: 'playerId', type: Number, example: 123, description: 'player.playerid' })
   @ApiResponse({ status: 200, type: [FriendCgTableDto] })

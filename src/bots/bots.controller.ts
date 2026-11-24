@@ -62,4 +62,38 @@ export class BotsController {
   ) {
     return this.bots.topup(playerId, Number(body.amount ?? 0), Number(body.cams ?? 0));
   }
+
+  // ── Vie sociale du bot (demandes d'amis + campokes) ──────────────────────────
+
+  @Get('accounts/:playerId/friend-requests')
+  @ApiOperation({ summary: 'Demandes d\'amis recues par le bot (en attente)' })
+  friendRequests(@Param('playerId', ParseIntPipe) playerId: number) {
+    return this.bots.listFriendRequests(playerId);
+  }
+
+  @Post('accounts/:playerId/friend-requests/:fromId/accept')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Le bot accepte la demande d\'ami de fromId' })
+  acceptFriend(
+    @Param('playerId', ParseIntPipe) playerId: number,
+    @Param('fromId', ParseIntPipe) fromId: number,
+  ) {
+    return this.bots.acceptFriendRequest(playerId, fromId);
+  }
+
+  @Get('accounts/:playerId/campokes')
+  @ApiOperation({ summary: 'Campokes (messages) recus par le bot' })
+  campokes(@Param('playerId', ParseIntPipe) playerId: number) {
+    return this.bots.listCampokes(playerId);
+  }
+
+  @Post('accounts/:playerId/campokes/reply')
+  @Roles('admin')
+  @ApiOperation({ summary: 'Le bot repond un campoke texte a toId' })
+  replyCampoke(
+    @Param('playerId', ParseIntPipe) playerId: number,
+    @Body() body: { toId: number; message: string },
+  ) {
+    return this.bots.replyCampoke(playerId, Number(body.toId), String(body.message ?? ''));
+  }
 }

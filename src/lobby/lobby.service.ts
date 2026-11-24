@@ -343,6 +343,10 @@ export class LobbyService {
   // le joueur lui-même n'est PAS assis. Sert au lobby : mettre ces tables en avant (code couleur).
   // Dès que le joueur s'y assoit, elle sort d'ici (sous-requête d'exclusion) et devient une table
   // active normale → pas de doublon. friendrelationstate=0 = ami, bidirectionnel.
+  // Tables cash ACTIVES a mettre en avant sur le lobby : toute table OCCUPEE (>= 1 joueur assis) ou
+  // le joueur ne s'est pas assis. Inclut les tables PUBLIQUES (ownerplayerid IS NULL) meme sans ami
+  // (c'est l'interet des bots : montrer de l'activite), ET les tables privees ou un AMI est assis.
+  // friendNames = seulement les amis (LEFT JOIN friendrelation) -> le client badge en vert si friendCount>0.
   async getFriendsCashTables(playerId: number): Promise<FriendCgTableDto[]> {
     const rows = await this.dataSource.query<any[]>(`
       SELECT
@@ -356,26 +360,28 @@ export class LobbyService {
         gta.gametype    AS gameType,
         gta.limittype   AS limitType,
         gta.hasvideo    AS hasVideo,
-        gt.playerscount AS nbPlayers,
-        GROUP_CONCAT(DISTINCT pi.screenname SEPARATOR '||') AS friendNamesRaw
+        COUNT(DISTINCT tp.playerid) AS nbPlayers,
+        MAX(gt.ownerplayerid IS NULL) AS isPublic,
+        MAX(CASE WHEN fr.friendrelationstate = 0 THEN 1 ELSE 0 END) AS hasFriend,
+        GROUP_CONCAT(DISTINCT CASE WHEN fr.friendrelationstate = 0 THEN pi.screenname END SEPARATOR '||') AS friendNamesRaw
       FROM gametable gt
       JOIN gametablearchetype gta ON gt.gametablearchetypeid = gta.gametablearchetypeid
       JOIN blindlevel         bl  ON bl.blindstructureid = gta.blindstructureid
       JOIN blindvalues        bv  ON bv.blindvaluesid    = bl.blindvaluesid
       JOIN gametableplayer    tp  ON tp.gametableid = gt.gametableid AND tp.endts = 0
-      JOIN friendrelation     fr  ON fr.friendrelationstate = 0
+      LEFT JOIN friendrelation fr ON fr.friendrelationstate = 0
                                   AND ( (fr.playeridfrom = ? AND fr.playeridto = tp.playerid)
                                      OR (fr.playeridto   = ? AND fr.playeridfrom = tp.playerid) )
-      JOIN playerinfos        pi  ON pi.playerid = tp.playerid
+      LEFT JOIN playerinfos   pi  ON pi.playerid = tp.playerid
       WHERE gt.launchstate = 2
         AND gt.tabletype   = 0
         AND gt.gametableid NOT IN (
               SELECT gametableid FROM gametableplayer WHERE playerid = ? AND endts = 0
         )
       GROUP BY gt.gametableid, gt.label, gta.label, gta.minplayers, gta.maxplayers,
-               bv.smallblind, bv.bigblind, gta.moneytype, gta.gametype, gta.limittype,
-               gta.hasvideo, gt.playerscount
-      ORDER BY gt.gametableid
+               bv.smallblind, bv.bigblind, gta.moneytype, gta.gametype, gta.limittype, gta.hasvideo
+      HAVING nbPlayers >= 1 AND (isPublic = 1 OR hasFriend = 1)
+      ORDER BY hasFriend DESC, gt.gametableid
     `, [playerId, playerId, playerId]);
 
     return rows.map((r) => {
@@ -391,7 +397,7 @@ export class LobbyService {
         gameType: r.gameType,
         limitType: r.limitType,
         hasVideo: r.hasVideo,
-        nbPlayers: r.nbPlayers,
+        nbPlayers: Number(r.nbPlayers),
         friendNames: names,
         friendCount: names.length,
       } as FriendCgTableDto;
