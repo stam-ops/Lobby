@@ -4,6 +4,7 @@ import { FrontService } from './front.service';
 import { FrontAddressDto } from './dto/front-address.dto';
 import { LobbyConnectionDto } from './dto/lobby-connection.dto';
 import { GeneralParametersDto, GeneralParameters2Dto } from './dto/general-parameters.dto';
+import { BonusAmountsDto } from './dto/bonus-amounts.dto';
 import { Public } from '../auth/auth.decorator';
 
 @ApiTags('Front')
@@ -52,5 +53,12 @@ export class FrontController {
   @Get('parameters2')
   getGeneralParameters2() {
     return this.front.getGeneralParameters2();
+  }
+
+  @ApiOperation({ summary: 'Montants de bonus (parrainage + VIP) pour affichage client (table bonus)' })
+  @ApiResponse({ status: 200, type: BonusAmountsDto })
+  @Get('bonus-amounts')
+  getBonusAmounts() {
+    return this.front.getBonusAmounts();
   }
 }

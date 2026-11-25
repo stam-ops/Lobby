@@ -3,10 +3,33 @@ import { DataSource } from 'typeorm';
 import { FrontAddressDto } from './dto/front-address.dto';
 import { LobbyConnectionDto } from './dto/lobby-connection.dto';
 import { GeneralParametersDto, GeneralParameters2Dto } from './dto/general-parameters.dto';
+import { BonusAmountsDto } from './dto/bonus-amounts.dto';
 
 @Injectable()
 export class FrontService {
   constructor(private readonly dataSource: DataSource) {}
+
+  /**
+   * Montants de bonus (parrainage + VIP) lus dans la table `bonus` pour affichage côté client.
+   * bonustype : 12 = sponsorBonus (par filleul), 3 = dailyBonusVip, 4 = monthlyBonus (Cam's/mois VIP).
+   * Valeurs manquantes → 0 (le client masque la ligne concernée).
+   */
+  async getBonusAmounts(): Promise<BonusAmountsDto> {
+    const rows = await this.dataSource.query<{ bonustype: number; bankrollval: number; cams: number }[]>(`
+      SELECT bonustype, bankrollval, cams FROM bonus WHERE bonustype IN (3, 4, 12)
+    `);
+    const by = (type: number) => rows.find((r) => Number(r.bonustype) === type);
+    const sponsor = by(12);
+    const dailyVip = by(3);
+    const monthly = by(4);
+    return {
+      sponsorBonusP:     Number(sponsor?.bankrollval ?? 0),
+      sponsorBonusCams:  Number(sponsor?.cams ?? 0),
+      dailyVipBonusP:    Number(dailyVip?.bankrollval ?? 0),
+      dailyVipBonusCams: Number(dailyVip?.cams ?? 0),
+      monthlyVipCams:    Number(monthly?.cams ?? 0),
+    };
+  }
 
   // Source: Front.java → getAvailableFrontsCount()
   // front.maxconnection = limite par serveur front (colonne directe sur la table)
