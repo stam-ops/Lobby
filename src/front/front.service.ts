@@ -10,24 +10,35 @@ export class FrontService {
   constructor(private readonly dataSource: DataSource) {}
 
   /**
-   * Montants de bonus (parrainage + VIP) lus dans la table `bonus` pour affichage côté client.
-   * bonustype : 12 = sponsorBonus (par filleul), 3 = dailyBonusVip, 4 = monthlyBonus (Cam's/mois VIP).
-   * Valeurs manquantes → 0 (le client masque la ligne concernée).
+   * Montants de bonus (parrainage + VIP) pour affichage côté client (arguments d'incitation).
+   * Parrainage + daily VIP : table `bonus` (bonustype 12 = sponsorBonus/filleul, 3 = dailyBonusVip).
+   * Cam's/mois VIP : table `offer` (abonnement VIP = producttype 1 ; l'offre MENSUELLE = la plus courte
+   * en vipdays → camamount, ex. 30). Valeurs manquantes → 0 (le client masque la ligne concernée).
    */
   async getBonusAmounts(): Promise<BonusAmountsDto> {
-    const rows = await this.dataSource.query<{ bonustype: number; bankrollval: number; cams: number }[]>(`
-      SELECT bonustype, bankrollval, cams FROM bonus WHERE bonustype IN (3, 4, 12)
-    `);
-    const by = (type: number) => rows.find((r) => Number(r.bonustype) === type);
+    const [bonusRows, vipRows, gpRows] = await Promise.all([
+      this.dataSource.query<{ bonustype: number; bankrollval: number; cams: number }[]>(`
+        SELECT bonustype, bankrollval, cams FROM bonus WHERE bonustype IN (3, 12)
+      `),
+      this.dataSource.query<{ camamount: number }[]>(`
+        SELECT camamount FROM offer
+        WHERE active = 1 AND producttype = 1 AND camamount > 0
+        ORDER BY vipdays ASC LIMIT 1
+      `),
+      this.dataSource.query<{ privatetablevipbonusactive: number }[]>(`
+        SELECT privatetablevipbonusactive FROM generalparameters LIMIT 1
+      `),
+    ]);
+    const by = (type: number) => bonusRows.find((r) => Number(r.bonustype) === type);
     const sponsor = by(12);
     const dailyVip = by(3);
-    const monthly = by(4);
     return {
       sponsorBonusP:     Number(sponsor?.bankrollval ?? 0),
       sponsorBonusCams:  Number(sponsor?.cams ?? 0),
       dailyVipBonusP:    Number(dailyVip?.bankrollval ?? 0),
       dailyVipBonusCams: Number(dailyVip?.cams ?? 0),
-      monthlyVipCams:    Number(monthly?.cams ?? 0),
+      monthlyVipCams:    Number(vipRows?.[0]?.camamount ?? 0),
+      privateTableVipBonusActive: Number(gpRows?.[0]?.privatetablevipbonusactive ?? 0) === 1,
     };
   }
 

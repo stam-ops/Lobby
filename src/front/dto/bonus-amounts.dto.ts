@@ -22,4 +22,7 @@ export class BonusAmountsDto {
 
   @ApiProperty({ example: 200, description: 'bonus(monthlyBonus).cams — Cam\'s offerts/mois au VIP' })
   monthlyVipCams: number;
+
+  @ApiProperty({ example: true, description: 'generalparameters.privatetablevipbonusactive — offre VIP table privée active' })
+  privateTableVipBonusActive: boolean;
 }

@@ -114,6 +114,19 @@ export const CONFIG_PAGES: Record<string, ConfigPage> = {
         ],
       },
       {
+        title: 'Offre VIP (création de table privée)',
+        note: 'Offre « 1 mois VIP offert » à l\'organisateur d\'une table privée qui réunit au moins '
+          + '3 filleuls (parrainage) et joue au moins 10 mains sur ses tables privées. '
+          + 'Off : le bandeau est masqué dans l\'app et aucun mois VIP n\'est attribué, même si un joueur '
+          + 'atteint les conditions.',
+        fields: [
+          {
+            table: GP, name: 'privatetablevipbonusactive', type: 'flag', label: 'Offre VIP table privée',
+            note: 'active l\'affichage de l\'offre dans l\'app et l\'attribution du mois VIP',
+          },
+        ],
+      },
+      {
         title: 'Campokes & partage',
         fields: [
           { table: SL, name: 'maxcampokeperday', type: 'number', note: 'plafond d\'invitations CREATE_CAMPOKE' },
