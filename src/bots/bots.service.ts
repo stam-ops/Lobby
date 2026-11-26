@@ -9,13 +9,13 @@ import { DataSource } from 'typeorm';
 
 // Colonnes editables de botparameters (whitelist) + lesquelles sont des flags 0/1.
 const PARAM_COLS = [
-  'enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled',
+  'enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled', 'tournamentbotsenabled',
   'botfilldelayms', 'cashhandoffthreshold', 'sngseedbots', 'maxonlineforbots',
   'cashseatminutes', 'cashpauseminutes', 'sngmaxstreak', 'sngrestminutes',
   'chatenabled', 'giftenabled', 'giftminminutes', 'giftmaxminutes', 'bigpotbb',
 ];
 const FLAG_COLS = new Set(['enabled', 'camblitzbotsenabled', 'hubotsenabled', 'cashenabled',
-  'chatenabled', 'giftenabled']);
+  'tournamentbotsenabled', 'chatenabled', 'giftenabled']);
 
 @Injectable()
 export class BotsService {
