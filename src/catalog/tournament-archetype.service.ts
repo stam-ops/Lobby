@@ -342,7 +342,8 @@ export class TournamentArchetypeService {
              UNIX_TIMESTAMP(ta.periodstart) AS periodStartEpoch,
              ta.timeforsubscriptionsbeforestart AS subscriptionMinutes,
              ta.structuretype AS structureType, ta.buyin AS buyIn,
-             ta.addonbreakindex AS addonBreakIndex, ta.lastlateregisterlevel AS lastLateRegisterLevel,
+             ta.addonbreakindex AS addonBreakIndex, ta.maxrebuys AS maxRebuys,
+             ta.lastlateregisterlevel AS lastLateRegisterLevel,
              ta.moneytype AS moneyType, ta.gametype AS gameType, ta.limittype AS limitType,
              ta.blindstructureid AS blindStructureId, ta.prizestructureid AS prizeStructureId,
              ta.initstack AS initStack, ta.gametimeid AS gameTimeId,
@@ -482,6 +483,18 @@ export class TournamentArchetypeService {
       );
     }
 
+    // maxRebuys = plafond de rebuys PAR JOUEUR (0 = illimité, comportement historique). Les rebuys ne
+    // sont ouverts QUE si addonbreakindex > 0 (TableServer.initBreaksCount : rebuy actif tant qu'on n'a
+    // pas atteint le break d'addon). Un plafond > 0 sans addon serait un no-op trompeur → on refuse.
+    const maxRebuys = num(body.maxRebuys);
+    if (maxRebuys > 0 && addonBreakIndex === 0) {
+      throw new BadRequestException(
+        'Un maximum de rebuys n\'a de sens qu\'avec les rebuys activés : ils ne sont ouverts que si '
+        + 'addonBreakIndex >= 1 (la période de rebuy court jusqu\'au break d\'addon). Mettre addonBreakIndex '
+        + '>= 1, ou laisser maxRebuys à 0.',
+      );
+    }
+
     // Buy-in ↔ structure de prix : ServersManager ne génère une structure que si `prizestructureid`
     // est NULL, et le calcul part de `buyInMinusRake = buyIn * (100 - rake) / 100`. Avec un buy-in
     // nul (ou trop faible) la dotation générée est nulle : le tournoi tourne sans prix. Un tournoi
@@ -543,10 +556,10 @@ export class TournamentArchetypeService {
     const res = await this.dataSource.query(
       `INSERT INTO tournamentarchetype
         (label, description, minplayers, maxplayers, tablesize, starttype, periodtype, perioddata,
-         periodstart, timeforsubscriptionsbeforestart, structuretype, buyin, addonbreakindex,
+         periodstart, timeforsubscriptionsbeforestart, structuretype, buyin, addonbreakindex, maxrebuys,
          lastlateregisterlevel, moneytype, gametype, limittype, blindstructureid, prizestructureid,
          initstack, gametimeid, hasvideo, isvalid, type, minlevel, clubid, clubsendcampoke, accesscode)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, FROM_UNIXTIME(?), ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
       [
         label.slice(0, 200),
         String(body.description ?? '').slice(0, 2000),
@@ -554,7 +567,7 @@ export class TournamentArchetypeService {
         startType, periodType, periodData,
         // FROM_UNIXTIME(NULL) = NULL : instant absolu, insensible au fuseau de session MySQL.
         periodStartEpoch, subscriptionMinutes,
-        structureType, buyIn, addonBreakIndex,
+        structureType, buyIn, addonBreakIndex, maxRebuys,
         num(body.lastLateRegisterLevel), num(body.moneyType, 1), num(body.gameType), num(body.limitType),
         blindStructureId,
         prizeStructureId,
