@@ -1,7 +1,7 @@
 import { Controller, Get, Param, ParseIntPipe, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiOperation, ApiParam, ApiQuery, ApiResponse, ApiTags } from '@nestjs/swagger';
 import { Auth } from '../auth/auth.decorator';
-import { RankingService } from './ranking.service';
+import { RankingService, parseRankMetric } from './ranking.service';
 import { RankEntryDto, PlayerRankRowDto, PlayerRankingDto, DailyResultDto } from './dto/rank-entry.dto';
 
 @ApiTags('Ranking')
@@ -83,14 +83,16 @@ export class RankingController {
   @ApiParam({ name: 'playerId', type: Number, example: 123 })
   @ApiQuery({ name: 'nBefore', required: false, type: Number, example: 5, description: 'Nb joueurs mieux classés' })
   @ApiQuery({ name: 'nAfter', required: false, type: Number, example: 5, description: 'Nb joueurs moins bien classés' })
+  @ApiQuery({ name: 'metric', required: false, enum: ['sum', 'poker', 'social'], example: 'sum', description: 'Score de tri : somme (défaut), poker ou social' })
   @ApiResponse({ status: 200, type: PlayerRankingDto })
   @Get('player/:playerId')
   getPlayerRanking(
     @Param('playerId', ParseIntPipe) playerId: number,
     @Query('nBefore', new ParseIntPipe({ optional: true })) nBefore = 5,
     @Query('nAfter', new ParseIntPipe({ optional: true })) nAfter = 5,
+    @Query('metric') metric?: string,
   ) {
-    return this.ranking.getPlayerRanking(playerId, nBefore, nAfter);
+    return this.ranking.getPlayerRanking(playerId, nBefore, nAfter, parseRankMetric(metric));
   }
 
   @ApiOperation({ summary: 'Top N joueurs tous scores confondus (PlayerAccount.java → getRankedPlayersTop)' })
@@ -103,9 +105,13 @@ export class RankingController {
 
   @ApiOperation({ summary: 'Classement parmi les amis (le joueur + ses amis, triés par score)' })
   @ApiParam({ name: 'playerId', type: Number, example: 123 })
+  @ApiQuery({ name: 'metric', required: false, enum: ['sum', 'poker', 'social'], example: 'sum', description: 'Score de tri : somme (défaut), poker ou social' })
   @ApiResponse({ status: 200, type: [PlayerRankRowDto] })
   @Get('friends/:playerId')
-  getFriendsRanking(@Param('playerId', ParseIntPipe) playerId: number) {
-    return this.ranking.getFriendsRanking(playerId);
+  getFriendsRanking(
+    @Param('playerId', ParseIntPipe) playerId: number,
+    @Query('metric') metric?: string,
+  ) {
+    return this.ranking.getFriendsRanking(playerId, parseRankMetric(metric));
   }
 }

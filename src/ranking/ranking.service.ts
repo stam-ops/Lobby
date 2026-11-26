@@ -2,6 +2,12 @@ import { Injectable } from '@nestjs/common';
 import { DataSource } from 'typeorm';
 import { RankEntryDto, PlayerRankRowDto, PlayerRankingDto, DailyResultDto } from './dto/rank-entry.dto';
 
+// Métrique de classement demandée par le client (défaut : somme poker + social).
+export type RankMetric = 'sum' | 'poker' | 'social';
+export function parseRankMetric(v?: string): RankMetric {
+  return v === 'poker' || v === 'social' ? v : 'sum';
+}
+
 const PERIOD_FILTER: Record<number, string> = {
   0: '',                                                                                                                             // all time
   1: `AND YEAR({{ts}})=YEAR(now()) AND MONTH({{ts}})=MONTH(now())`,                                                               // current month
@@ -196,14 +202,38 @@ export class RankingService {
       .slice(0, number);
   }
 
+  // Expression SQL de tri du classement selon la métrique demandée. WHITELIST stricte : la valeur
+  // vient du client, on ne l'interpole JAMAIS telle quelle — on mappe vers une expression fixe.
+  // `alias` permet de viser pa (ligne courante) ou pa2 (sous-requête de rang).
+  private metricExpr(metric: RankMetric, alias: 'pa' | 'pa2'): string {
+    switch (metric) {
+      case 'poker':  return `${alias}.gamescore`;
+      case 'social': return `${alias}.socialscore`;
+      case 'sum':
+      default:       return `${alias}.gamescore + ${alias}.socialscore`;
+    }
+  }
+
+  private metricValue(metric: RankMetric, gamescore: number, socialscore: number): number {
+    switch (metric) {
+      case 'poker':  return gamescore;
+      case 'social': return socialscore;
+      case 'sum':
+      default:       return gamescore + socialscore;
+    }
+  }
+
   // Source: PlayerAccount.java → getPlayerGameScoreRow + getRankedPlayersBefore/After
-  async getPlayerRanking(playerId: number, nBefore: number, nAfter: number): Promise<PlayerRankingDto> {
+  async getPlayerRanking(playerId: number, nBefore: number, nAfter: number, metric: RankMetric = 'sum'): Promise<PlayerRankingDto> {
+    const expr  = this.metricExpr(metric, 'pa');
+    const expr2 = this.metricExpr(metric, 'pa2');
+
     const playerRows = await this.dataSource.query<any[]>(`
       SELECT
         pa.gamescore, pa.socialscore, pi.screenname, pi.fbuid,
         p.accounttype, UNIX_TIMESTAMP(p.endvipts) AS endVipTs, 0 AS subscription,
         ((SELECT COUNT(*) FROM playeraccount pa2
-          WHERE pa2.gamescore + pa2.socialscore > pa.gamescore + pa.socialscore) + 1) AS \`rank\`
+          WHERE ${expr2} > ${expr}) + 1) AS \`rank\`
       FROM playeraccount pa
       JOIN playerinfos pi ON pi.playerid = pa.playerid
       JOIN player      p  ON p.playerid  = pa.playerid
@@ -215,7 +245,7 @@ export class RankingService {
     }
 
     const pr = playerRows[0];
-    const totalScore = pr.gamescore + pr.socialscore;
+    const totalScore = this.metricValue(metric, pr.gamescore, pr.socialscore);
 
     const mapRow = (r: any): PlayerRankRowDto => ({
       playerId: r.playerid ?? playerId,
@@ -235,8 +265,8 @@ export class RankingService {
         FROM playeraccount pa
         JOIN playerinfos pi ON pi.playerid = pa.playerid
         JOIN player      p  ON p.playerid  = pa.playerid
-        WHERE pa.gamescore + pa.socialscore > ? AND pa.playerid != ?
-        ORDER BY pa.gamescore + pa.socialscore ASC
+        WHERE ${expr} > ? AND pa.playerid != ?
+        ORDER BY ${expr} ASC
         LIMIT ?
       `, [totalScore, playerId, nBefore]),
       this.dataSource.query<any[]>(`
@@ -245,8 +275,8 @@ export class RankingService {
         FROM playeraccount pa
         JOIN playerinfos pi ON pi.playerid = pa.playerid
         JOIN player      p  ON p.playerid  = pa.playerid
-        WHERE pa.gamescore + pa.socialscore < ? AND pa.playerid != ?
-        ORDER BY pa.gamescore + pa.socialscore DESC
+        WHERE ${expr} < ? AND pa.playerid != ?
+        ORDER BY ${expr} DESC
         LIMIT ?
       `, [totalScore, playerId, nAfter]),
     ]);
@@ -282,7 +312,8 @@ export class RankingService {
   // Classement parmi les amis : le joueur + ses amis (bidirectionnel, friendrelationstate=0),
   // triés par score total (gamescore+socialscore) décroissant. Le client en déduit le rang
   // (index+1) et surligne sa propre ligne.
-  getFriendsRanking(playerId: number): Promise<PlayerRankRowDto[]> {
+  getFriendsRanking(playerId: number, metric: RankMetric = 'sum'): Promise<PlayerRankRowDto[]> {
+    const expr = this.metricExpr(metric, 'pa');
     return this.dataSource.query<PlayerRankRowDto[]>(`
       SELECT pi.playerid                AS playerId,
              pi.screenname              AS screenName,
@@ -301,7 +332,7 @@ export class RankingService {
            UNION
            SELECT fr.playeridfrom FROM friendrelation fr WHERE fr.playeridto   = ? AND fr.friendrelationstate = 0
          )
-      ORDER BY pa.gamescore + pa.socialscore DESC
+      ORDER BY ${expr} DESC
     `, [playerId, playerId, playerId]);
   }
 }
