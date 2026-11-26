@@ -36,6 +36,9 @@ export class TournamentStaticInfoDto {
   @ApiProperty({ example: 0, description: 'Index du break addon (0 = pas de rebuy)' })
   addonBreakIndex: number;
 
+  @ApiProperty({ example: 0, description: 'Plafond de rebuys par joueur (0 = illimité). N\'a de sens que si addonBreakIndex >= 1.' })
+  maxRebuys: number;
+
   @ApiProperty({ example: 10000, description: 'Stack initial en jetons' })
   initialStack: number;
 
